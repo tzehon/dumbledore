@@ -60,9 +60,17 @@ export default function App() {
     setSelectedDate(newDate);
   }
 
+  // --- FIX: The search handler now correctly handles all clicks ---
   const handleSearch = () => {
-    setSearchedUserId(lookupUserId);
-    fetchCommunications(lookupUserId, selectedDate);
+    // If the ID is the same, the state update won't trigger useEffect,
+    // so we must call the fetch function manually.
+    if (lookupUserId === searchedUserId) {
+        fetchCommunications(lookupUserId, selectedDate);
+    } else {
+    // If the ID is different, setting the state will trigger the useEffect,
+    // which will call the fetch function.
+        setSearchedUserId(lookupUserId);
+    }
   }
 
   const handleUpdateStatus = (comm, newStatus) => {
