@@ -330,15 +330,17 @@ function CampaignView() {
         date: new Date().toISOString().split('T')[0],
         hour: new Date().getHours(),
         templateId: '',
-        trackingId: 'track_001'
+        trackingId: ''
     });
     const [templates, setTemplates] = useState([]);
+    const [trackingIds, setTrackingIds] = useState([]); // New state for tracking IDs
     const [distinctUsers, setDistinctUsers] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
 
     useEffect(() => {
         setError(null);
+        // Fetch templates
         fetch(`${API_BASE_URL}/templates`)
             .then(res => {
                 if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
@@ -354,6 +356,23 @@ function CampaignView() {
                 console.error("Fetch templates error:", err);
                 setError("Failed to load campaign templates.");
             });
+
+        // Fetch tracking IDs
+        fetch(`${API_BASE_URL}/tracking-ids`)
+            .then(res => {
+                if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+                return res.json();
+            })
+            .then(data => {
+                setTrackingIds(data);
+                if(data.length > 0) {
+                    setParams(p => ({...p, trackingId: data[0]}));
+                }
+            })
+            .catch(err => {
+                console.error("Fetch tracking IDs error:", err);
+                setError("Failed to load tracking IDs.");
+            });
     }, []);
 
     const handleSearch = (e) => {
@@ -366,6 +385,7 @@ function CampaignView() {
         startOfHour.setUTCHours(parseInt(params.hour), 0, 0, 0);
         const endOfHour = new Date(startOfHour.getTime() + 60 * 60 * 1000);
 
+        // --- CHANGE: Build full query string for logging ---
         const mongoQuery = `db.getCollection('communications').distinct("user.id", { day: ISODate("${params.date}T00:00:00.000Z"), events: { $elemMatch: { "dispatch_time": { $gte: ISODate("${startOfHour.toISOString()}"), $lt: ISODate("${endOfHour.toISOString()}") }, "metadata.template_id": "${params.templateId}", "metadata.tracking_id": "${params.trackingId}" } } })`;
         console.log("Running Query for Req D:", mongoQuery);
 
@@ -411,7 +431,10 @@ function CampaignView() {
                 </div>
                 <div>
                     <label className="block text-sm font-medium text-slate-600">Tracking ID</label>
-                    <input type="text" name="trackingId" value={params.trackingId} onChange={handleChange} className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"/>
+                    {/* --- CHANGE: Replaced text input with a dropdown --- */}
+                    <select name="trackingId" value={params.trackingId} onChange={handleChange} className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                        {trackingIds.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
                 </div>
                 <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition-colors shadow h-10">Search</button>
             </form>
