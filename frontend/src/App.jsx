@@ -17,11 +17,6 @@ export default function App() {
     if (!userId) return;
     setIsLoadingComms(true);
     setError(null);
-
-    // --- CHANGE: Log the MongoDB query ---
-    const mongoQuery = `db.getCollection('communications').findOne({ "user.id": ${parseInt(userId)}, day: ISODate("${date}T00:00:00.000Z") })`;
-    console.log("Running Query for Req B & E:", mongoQuery);
-
     fetch(`${API_BASE_URL}/communications/user/${userId}?date=${date}`)
       .then(res => {
         if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
@@ -39,7 +34,6 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    // Initial fetch or when dependencies change
     if (lookupUserId) {
         fetchCommunications(lookupUserId, selectedDate);
     }
@@ -77,8 +71,8 @@ export default function App() {
     });
   };
 
-  const handleSendNewComm = () => {
-    if (!lookupUserId) return;
+  const handleSendNewComm = (count) => {
+    if (!lookupUserId || count < 1) return;
     setError(null);
     const templateId = `template_${String(Math.floor(Math.random() * 20) + 1).padStart(3, '0')}`;
     const trackingId = `track_${String(Math.floor(Math.random() * 10) + 1).padStart(3, '0')}`;
@@ -87,7 +81,7 @@ export default function App() {
     fetch(`${API_BASE_URL}/communications`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: parseInt(lookupUserId), userType, templateId, trackingId })
+        body: JSON.stringify({ userId: parseInt(lookupUserId), userType, templateId, trackingId, count: parseInt(count) })
     })
     .then(async res => {
         if (!res.ok) {
@@ -101,7 +95,7 @@ export default function App() {
         if (selectedDate === today) {
             fetchCommunications(lookupUserId, selectedDate);
         } else {
-            alert('New communication sent for today.');
+            alert(`${count} new communication(s) sent for today.`);
         }
     })
     .catch(err => {
@@ -226,25 +220,35 @@ function Dashboard({ communications, isLoadingComms, onUpdateStatus, onSendNewCo
 }
 
 function UserLookup({ lookupUserId, setLookupUserId, onSendNewComm }) {
-  return (
-    <div className="bg-white p-6 rounded-lg shadow mb-6">
-      <div className="flex justify-between items-center">
-        <div className="flex items-center gap-4">
-            <label htmlFor="userIdInput" className="text-lg font-semibold text-slate-700">User ID Lookup (Req B & E):</label>
-            <input
-                id="userIdInput"
-                type="number"
-                value={lookupUserId}
-                onChange={(e) => setLookupUserId(e.target.value)}
-                className="p-2 border border-slate-300 rounded-md shadow-sm w-48"
-            />
+    const [count, setCount] = useState(1);
+    return (
+        <div className="bg-white p-6 rounded-lg shadow mb-6">
+        <div className="flex justify-between items-center">
+            <div className="flex items-center gap-4">
+                <label htmlFor="userIdInput" className="text-lg font-semibold text-slate-700">User ID Lookup (Req B & E):</label>
+                <input
+                    id="userIdInput"
+                    type="number"
+                    value={lookupUserId}
+                    onChange={(e) => setLookupUserId(e.target.value)}
+                    className="p-2 border border-slate-300 rounded-md shadow-sm w-48"
+                />
+            </div>
+            <div className="flex items-center gap-2">
+                <input
+                    type="number"
+                    value={count}
+                    onChange={(e) => setCount(e.target.value)}
+                    className="p-2 border border-slate-300 rounded-md shadow-sm w-20 text-center"
+                    min="1"
+                />
+                <button onClick={() => onSendNewComm(count)} className="bg-blue-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-600 transition-colors shadow">
+                    Append Comm(s) (Req A)
+                </button>
+            </div>
         </div>
-        <button onClick={onSendNewComm} className="bg-blue-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-600 transition-colors shadow">
-          Append New Comm (Req A)
-        </button>
-      </div>
-    </div>
-  );
+        </div>
+    );
 }
 
 function CommunicationsLog({ communications, isLoading, onUpdateStatus, onReplaceComms, selectedDate, onDateChange }) {
@@ -319,7 +323,6 @@ function CampaignView() {
         setDistinctUsers(null);
         setError(null);
 
-        // --- CHANGE: Log the MongoDB query ---
         const startOfHour = new Date(params.date);
         startOfHour.setUTCHours(parseInt(params.hour), 0, 0, 0);
         const endOfHour = new Date(startOfHour.getTime() + 60 * 60 * 1000);
