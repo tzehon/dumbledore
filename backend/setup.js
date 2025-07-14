@@ -61,6 +61,12 @@ async function setupAndSeedDatabase() {
         });
         console.log("-> Created compound index on event details for status updates.");
 
+        // --- CHANGE: Added indexes for dropdowns ---
+        await communicationsCollection.createIndex({ "events.metadata.template_id": 1 });
+        console.log("-> Created multikey index for template ID lookups.");
+        await communicationsCollection.createIndex({ "events.metadata.tracking_id": 1 });
+        console.log("-> Created multikey index for tracking ID lookups.");
+
         await communicationsCollection.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
         console.log("-> Created TTL index on communications.");
         console.log("Database setup complete!");

@@ -225,36 +225,21 @@ app.post('/api/communications/replace', async (req, res) => {
 // but it's needed for a realistic frontend.
 app.get('/api/templates', async (req, res) => {
     const db = await connectToDbForServer();
-    const pipeline = [
-        { $unwind: "$events" },
-        { $group: { _id: '$events.metadata.template_id' } },
-        { $sort: { _id: 1 } }
-    ];
     console.log("\n--- Backend Query Log (Get Templates) ---");
-    console.log("db.collection('communications').aggregate(", JSON.stringify(pipeline, null, 2), ")");
-    await logAggregationPlan(db, 'communications', pipeline);
-
-    const results = await db.collection('communications').aggregate(pipeline).toArray();
-    const templates = results.map(doc => doc._id);
-    res.json(templates);
+    console.log("db.collection('communications').distinct('events.metadata.template_id')");
+    // Note: .explain() is not applicable to the distinct command itself, but the supporting index is logged in setup.js
+    const templates = await db.collection('communications').distinct('events.metadata.template_id');
+    res.json(templates.sort());
 });
 
 app.get('/api/tracking-ids', async (req, res) => {
     const db = await connectToDbForServer();
-    const pipeline = [
-        { $unwind: "$events" },
-        { $group: { _id: '$events.metadata.tracking_id' } },
-        { $sort: { _id: 1 } }
-    ];
     console.log("\n--- Backend Query Log (Get Tracking IDs) ---");
-    console.log("db.collection('communications').aggregate(", JSON.stringify(pipeline, null, 2), ")");
-    await logAggregationPlan(db, 'communications', pipeline);
-
-    const results = await db.collection('communications').aggregate(pipeline).toArray();
-    const trackingIds = results.map(doc => doc._id);
-    res.json(trackingIds);
+    console.log("db.collection('communications').distinct('events.metadata.tracking_id')");
+    // Note: .explain() is not applicable to the distinct command itself, but the supporting index is logged in setup.js
+    const trackingIds = await db.collection('communications').distinct('events.metadata.tracking_id');
+    res.json(trackingIds.sort());
 });
-
 
 // --- Server Initialization ---
 async function startServer() {
