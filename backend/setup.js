@@ -13,8 +13,9 @@ const NUM_USERS_PRODUCTION = 50000000;
 const COMMS_PER_USER_PER_DAY = 5;
 
 // --- Development Scale Parameters ---
-const NUM_USERS_TO_GENERATE = 2000000;
+const NUM_USERS_TO_GENERATE = 50000000;
 const DAYS_OF_DATA_TO_GENERATE = 3; // Align with 3-day retention policy
+const BATCH_SIZE = 10000; // Insert documents in batches of this size
 
 const USER_TYPES = ["premium", "standard", "trial"];
 const TEMPLATES = Array.from({ length: 20 }, (_, i) => `template_${String(i + 1).padStart(3, '0')}`);
@@ -61,7 +62,6 @@ async function setupAndSeedDatabase() {
         });
         console.log("-> Created compound index on event details for status updates.");
 
-        // --- CHANGE: Added indexes for dropdowns ---
         await communicationsCollection.createIndex({ "events.metadata.template_id": 1 });
         console.log("-> Created multikey index for template ID lookups.");
         await communicationsCollection.createIndex({ "events.metadata.tracking_id": 1 });
@@ -76,11 +76,12 @@ async function setupAndSeedDatabase() {
 
         const startTime = performance.now();
 
+        // --- CHANGE: Use iterative batch insert for performance ---
+        let bucketBatch = [];
         for (let i = 0; i < NUM_USERS_TO_GENERATE; i++) {
             const userId = 1000 + i;
             const userType = faker.helpers.arrayElement(USER_TYPES);
 
-            // Generate for 3 days to match retention period
             for (let day = 0; day < DAYS_OF_DATA_TO_GENERATE; day++) {
                 let eventsForDay = [];
                 for (let j = 0; j < COMMS_PER_USER_PER_DAY; j++) {
@@ -105,17 +106,27 @@ async function setupAndSeedDatabase() {
                 startOfDay.setUTCHours(0, 0, 0, 0);
                 const expireAt = new Date(startOfDay.getTime() + (7 * 24 * 60 * 60 * 1000));
 
-                await communicationsCollection.insertOne({
+                bucketBatch.push({
                     user: { id: userId, type: userType },
                     day: startOfDay,
                     event_count: eventsForDay.length,
                     expireAt: expireAt,
                     events: eventsForDay
                 });
+
+                // When batch is full, insert and clear
+                if (bucketBatch.length >= BATCH_SIZE) {
+                    await communicationsCollection.insertMany(bucketBatch);
+                    bucketBatch = []; // Reset the batch
+                    console.log(`   ... Inserted a batch of ${BATCH_SIZE} documents.`);
+                }
             }
-             if ((i + 1) % 100 === 0) {
-                console.log(`  ... Processed ${i + 1}/${NUM_USERS_TO_GENERATE} users.`);
-            }
+        }
+
+        // Insert any remaining documents in the last batch
+        if (bucketBatch.length > 0) {
+            await communicationsCollection.insertMany(bucketBatch);
+            console.log(`   ... Inserted the final batch of ${bucketBatch.length} documents.`);
         }
 
         const endTime = performance.now();
@@ -123,22 +134,18 @@ async function setupAndSeedDatabase() {
 
         console.log("\n✅ Data generation complete!");
 
-        // --- CHANGE: Updated performance calculation and output ---
         console.log(`\n⏱️ Performance & Estimation:`);
         console.log(`   - Time to generate for ${NUM_USERS_TO_GENERATE.toLocaleString('en-US')} users: ${durationSeconds} seconds.`);
 
         const timePerUser = (endTime - startTime) / NUM_USERS_TO_GENERATE;
 
-        // Full production load
         const estimatedProdTimeFullMs = timePerUser * NUM_USERS_PRODUCTION;
         const estimatedProdTimeFullHours = (estimatedProdTimeFullMs / (1000 * 60 * 60)).toFixed(2);
         console.log(`   - Estimated time for FULL production load (${NUM_USERS_PRODUCTION.toLocaleString('en-US')} users): ~${estimatedProdTimeFullHours} hours.`);
 
-        // Half production load
         const estimatedProdTimeHalfHours = (estimatedProdTimeFullHours / 2).toFixed(2);
         console.log(`   - Estimated time for HALF production load (${(NUM_USERS_PRODUCTION / 2).toLocaleString('en-US')} users): ~${estimatedProdTimeHalfHours} hours.`);
 
-        // 3/4 production load
         const estimatedProdTimeThreeQuartersHours = (estimatedProdTimeFullHours * 0.75).toFixed(2);
         console.log(`   - Estimated time for 3/4 production load (${(NUM_USERS_PRODUCTION * 0.75).toLocaleString('en-US')} users): ~${estimatedProdTimeThreeQuartersHours} hours.`);
 

@@ -9,7 +9,7 @@ const DB_NAME_STATS = process.env.DB_NAME;
 // --- Production scale numbers from PDF added for reference ---
 const NUM_USERS_PRODUCTION = 50000000;
 const DAYS_OF_DATA_PRODUCTION = 3;
-const NUM_USERS_TO_GENERATE = 2000000; // Must match the value in setup.js
+const NUM_USERS_TO_GENERATE = 50000000; // Must match the value in setup.js
 const DAYS_OF_DATA_TO_GENERATE = 3; // Must match the value in setup.js
 
 // Helper function to format bytes into a readable string
