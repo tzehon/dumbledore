@@ -126,7 +126,7 @@ To run the application, you need to have both the backend and frontend servers r
 1.  Open your web browser.
 2.  Navigate to the frontend URL (e.g., **http://localhost:5173**).
 
-You should now see the "Internal Comms Capping Tool" running in your browser.
+You should now see the "Dumbledore - SmartComms" running in your browser.
 
 ---
 ## Summary of Commands

@@ -139,7 +139,8 @@ app.get('/api/campaigns/distinct-users', async (req, res) => {
 
     const endOfHour = new Date(startOfHour.getTime() + 60 * 60 * 1000);
 
-    const mongoQuery = `db.getCollection('communications').distinct("user.id", { day: ISODate("${startOfDay.toISOString()}"), events: { $elemMatch: { ... } } })`;
+    // --- CHANGE: Build full query string for logging ---
+    const mongoQuery = `db.getCollection('communications').distinct("user.id", { day: ISODate("${startOfDay.toISOString()}"), events: { $elemMatch: { "dispatch_time": { $gte: ISODate("${startOfHour.toISOString()}"), $lt: ISODate("${endOfHour.toISOString()}") }, "metadata.template_id": "${templateId}", "metadata.tracking_id": "${trackingId}" } } })`;
     console.log("Executing Req D:", mongoQuery);
 
     const distinctUsers = await db.collection('communications').distinct("user.id", {
@@ -194,7 +195,6 @@ app.post('/api/communications/replace', async (req, res) => {
 });
 
 
-// --- CHANGE: Added new endpoint for tracking IDs ---
 // This endpoint is for demonstration and not directly from the PDF,
 // but it's needed for a realistic frontend.
 app.get('/api/templates', async (req, res) => {
@@ -208,6 +208,7 @@ app.get('/api/templates', async (req, res) => {
     res.json(templates);
 });
 
+// --- CHANGE: Added new endpoint for tracking IDs ---
 app.get('/api/tracking-ids', async (req, res) => {
     const db = await connectToDbForServer();
     const results = await db.collection('communications').aggregate([
