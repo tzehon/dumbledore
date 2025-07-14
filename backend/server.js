@@ -212,22 +212,28 @@ app.post('/api/communications/replace', async (req, res) => {
 // but it's needed for a realistic frontend.
 app.get('/api/templates', async (req, res) => {
     const db = await connectToDbForServer();
-    const results = await db.collection('communications').aggregate([
+    const pipeline = [
         { $unwind: "$events" },
         { $group: { _id: '$events.metadata.template_id' } },
         { $sort: { _id: 1 } }
-    ]).toArray();
+    ];
+    console.log("\n--- Backend Query Log (Get Templates) ---");
+    console.log("db.collection('communications').aggregate(", JSON.stringify(pipeline, null, 2), ")");
+    const results = await db.collection('communications').aggregate(pipeline).toArray();
     const templates = results.map(doc => doc._id);
     res.json(templates);
 });
 
 app.get('/api/tracking-ids', async (req, res) => {
     const db = await connectToDbForServer();
-    const results = await db.collection('communications').aggregate([
+    const pipeline = [
         { $unwind: "$events" },
         { $group: { _id: '$events.metadata.tracking_id' } },
         { $sort: { _id: 1 } }
-    ]).toArray();
+    ];
+    console.log("\n--- Backend Query Log (Get Tracking IDs) ---");
+    console.log("db.collection('communications').aggregate(", JSON.stringify(pipeline, null, 2), ")");
+    const results = await db.collection('communications').aggregate(pipeline).toArray();
     const trackingIds = results.map(doc => doc._id);
     res.json(trackingIds);
 });
