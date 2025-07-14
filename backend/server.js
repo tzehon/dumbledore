@@ -25,13 +25,10 @@ app.get('/api/communications/user/:id', async (req, res) => {
     const startOfDay = new Date(date);
     startOfDay.setUTCHours(0, 0, 0, 0);
 
-    const mongoQuery = `db.getCollection('communications').findOne({ "user.id": ${userId}, day: ISODate("${startOfDay.toISOString()}") })`;
-    console.log("Executing Req B&E:", mongoQuery);
+    const query = { "user.id": userId, day: startOfDay };
+    console.log("Executing Req B&E: db.collection('communications').findOne(", JSON.stringify(query, null, 2), ")");
 
-    const bucket = await db.collection('communications').findOne({
-        "user.id": userId,
-        day: startOfDay
-    });
+    const bucket = await db.collection('communications').findOne(query);
 
     res.json(bucket ? bucket.events : []);
 });
@@ -62,22 +59,19 @@ app.post('/api/communications', async (req, res) => {
         });
     }
 
-    const mongoQuery = `db.getCollection('communications').updateOne({ "user.id": ${userId}, day: ISODate("${startOfDay.toISOString()}") }, { $push: { events: { $each: [...] } }, $inc: { ... }, $setOnInsert: { ... } }, { upsert: true })`;
-    console.log("Executing Req A:", mongoQuery);
+    const filter = { "user.id": userId, day: startOfDay };
+    const update = {
+        $push: { events: { $each: eventsToPush } },
+        $inc: { event_count: eventsToPush.length },
+        $setOnInsert: {
+            user: { id: userId, type: userType },
+            day: startOfDay,
+            expireAt: expireAt
+        }
+    };
+    console.log("Executing Req A: db.collection('communications').updateOne(", JSON.stringify(filter, null, 2), ",", JSON.stringify(update, null, 2), ", { upsert: true })");
 
-    const result = await db.collection('communications').updateOne(
-        { "user.id": userId, day: startOfDay },
-        {
-            $push: { events: { $each: eventsToPush } },
-            $inc: { event_count: eventsToPush.length },
-            $setOnInsert: {
-                user: { id: userId, type: userType },
-                day: startOfDay,
-                expireAt: expireAt
-            }
-        },
-        { upsert: true }
-    );
+    const result = await db.collection('communications').updateOne(filter, update, { upsert: true });
 
     res.status(201).json({ message: `${count} event(s) appended.`});
 });
@@ -94,25 +88,23 @@ app.put('/api/communications/status', async (req, res) => {
 
     const eventDispatchTime = new Date(dispatch_time);
 
-    const mongoQuery = `db.getCollection('communications').updateOne({ "user.id": ${userId}, "events.dispatch_time": ISODate("${eventDispatchTime.toISOString()}"), ... }, { $set: { "events.$[elem].status": "${newStatus}" } }, { arrayFilters: [ ... ] })`;
-    console.log("Executing Req F:", mongoQuery);
+    const filter = {
+        "user.id": userId,
+        "events.dispatch_time": eventDispatchTime,
+        "events.metadata.template_id": templateId,
+        "events.metadata.tracking_id": trackingId,
+    };
+    const update = { $set: { "events.$[elem].status": newStatus } };
+    const options = {
+        arrayFilters: [{
+            "elem.dispatch_time": eventDispatchTime,
+            "elem.metadata.template_id": templateId,
+            "elem.metadata.tracking_id": trackingId
+        }]
+    };
+    console.log("Executing Req F: db.collection('communications').updateOne(", JSON.stringify(filter, null, 2), ",", JSON.stringify(update, null, 2), ",", JSON.stringify(options, null, 2), ")");
 
-    const result = await db.collection('communications').updateOne(
-        {
-            "user.id": userId,
-            "events.dispatch_time": eventDispatchTime,
-            "events.metadata.template_id": templateId,
-            "events.metadata.tracking_id": trackingId,
-        },
-        { $set: { "events.$[elem].status": newStatus } },
-        {
-            arrayFilters: [{
-                "elem.dispatch_time": eventDispatchTime,
-                "elem.metadata.template_id": templateId,
-                "elem.metadata.tracking_id": trackingId
-            }]
-        }
-    );
+    const result = await db.collection('communications').updateOne(filter, update, options);
 
     if (result.matchedCount === 0) {
         return res.status(404).send('Communication event not found.');
@@ -139,11 +131,7 @@ app.get('/api/campaigns/distinct-users', async (req, res) => {
 
     const endOfHour = new Date(startOfHour.getTime() + 60 * 60 * 1000);
 
-    // --- CHANGE: Build full query string for logging ---
-    const mongoQuery = `db.getCollection('communications').distinct("user.id", { day: ISODate("${startOfDay.toISOString()}"), events: { $elemMatch: { "dispatch_time": { $gte: ISODate("${startOfHour.toISOString()}"), $lt: ISODate("${endOfHour.toISOString()}") }, "metadata.template_id": "${templateId}", "metadata.tracking_id": "${trackingId}" } } })`;
-    console.log("Executing Req D:", mongoQuery);
-
-    const distinctUsers = await db.collection('communications').distinct("user.id", {
+    const query = {
         day: startOfDay,
         events: {
             $elemMatch: {
@@ -152,7 +140,10 @@ app.get('/api/campaigns/distinct-users', async (req, res) => {
                 "metadata.tracking_id": trackingId
             }
         }
-    });
+    };
+    console.log("Executing Req D: db.collection('communications').distinct('user.id',", JSON.stringify(query, null, 2), ")");
+
+    const distinctUsers = await db.collection('communications').distinct("user.id", query);
 
     res.json(distinctUsers);
 });
@@ -175,16 +166,11 @@ app.post('/api/communications/replace', async (req, res) => {
         dispatch_time: new Date(comm.dispatch_time)
     }));
 
-    const mongoQuery = `db.getCollection('communications').updateOne({ "user.id": ${userId}, day: ISODate("${startOfDay.toISOString()}") }, { $set: { events: [...], event_count: ${newEvents.length} } }, { upsert: true })`;
-    console.log("Executing Req C:", mongoQuery);
+    const filter = { "user.id": userId, day: startOfDay };
+    const update = { $set: { events: newEvents, event_count: newEvents.length } };
+    console.log("Executing Req C: db.collection('communications').updateOne(", JSON.stringify(filter, null, 2), ",", JSON.stringify(update, null, 2), ", { upsert: true })");
 
-    const result = await db.collection('communications').updateOne(
-        { "user.id": userId, day: startOfDay },
-        {
-            $set: { events: newEvents, event_count: newEvents.length }
-        },
-        { upsert: true } // Creates the doc if it doesn't exist for that day
-    );
+    const result = await db.collection('communications').updateOne(filter, update, { upsert: true });
 
     res.status(200).json({
         message: "Communications replaced successfully.",
@@ -208,7 +194,6 @@ app.get('/api/templates', async (req, res) => {
     res.json(templates);
 });
 
-// --- CHANGE: Added new endpoint for tracking IDs ---
 app.get('/api/tracking-ids', async (req, res) => {
     const db = await connectToDbForServer();
     const results = await db.collection('communications').aggregate([

@@ -19,8 +19,10 @@ export default function App() {
     setIsLoadingComms(true);
     setError(null);
 
-    const mongoQuery = `db.getCollection('communications').findOne({ "user.id": ${parseInt(userId)}, day: ISODate("${date}T00:00:00.000Z") })`;
-    console.log("Running Query for Req B & E:", mongoQuery);
+    const startOfDay = new Date(date);
+    startOfDay.setUTCHours(0,0,0,0);
+    const query = { "user.id": parseInt(userId), day: startOfDay };
+    console.log("Executing Req B & E: db.collection('communications').findOne(", JSON.stringify(query, null, 2), ")");
 
     fetch(`${API_BASE_URL}/communications/user/${userId}?date=${date}`)
       .then(res => {
@@ -211,7 +213,7 @@ function Header({ setView, currentView }) {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
         <div className="flex items-center space-x-3">
           <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
-          <h1 className="text-2xl font-bold text-gray-800">Dumbledore - SmartComms</h1>
+          <h1 className="text-2xl font-bold text-gray-800">Internal Comms Capping Tool</h1>
         </div>
         <nav className="flex space-x-2 bg-gray-200 p-1 rounded-lg">
           <button onClick={() => setView('dashboard')} className={`px-4 py-1.5 text-sm font-medium rounded-md ${currentView === 'dashboard' ? 'bg-white text-gray-700 shadow' : 'text-gray-600 hover:bg-gray-300'}`}>User Lookup</button>
@@ -385,11 +387,20 @@ function CampaignView() {
         startOfHour.setUTCHours(parseInt(params.hour), 0, 0, 0);
         const endOfHour = new Date(startOfHour.getTime() + 60 * 60 * 1000);
 
-        const mongoQuery = `db.getCollection('communications').distinct("user.id", { day: ISODate("${params.date}T00:00:00.000Z"), events: { $elemMatch: { "dispatch_time": { $gte: ISODate("${startOfHour.toISOString()}"), $lt: ISODate("${endOfHour.toISOString()}") }, "metadata.template_id": "${params.templateId}", "metadata.tracking_id": "${params.trackingId}" } } })`;
-        console.log("Running Query for Req D:", mongoQuery);
+        const query = {
+            day: new Date(params.date + 'T00:00:00.000Z'),
+            events: {
+                $elemMatch: {
+                    "dispatch_time": { $gte: startOfHour, $lt: endOfHour },
+                    "metadata.template_id": params.templateId,
+                    "metadata.tracking_id": params.trackingId
+                }
+            }
+        };
+        console.log("Running Query for Req D: db.collection('communications').distinct('user.id',", JSON.stringify(query, null, 2), ")");
 
-        const query = new URLSearchParams(params).toString();
-        fetch(`${API_BASE_URL}/campaigns/distinct-users?${query}`)
+        const queryString = new URLSearchParams(params).toString();
+        fetch(`${API_BASE_URL}/campaigns/distinct-users?${queryString}`)
             .then(res => {
                 if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
                 return res.json();
