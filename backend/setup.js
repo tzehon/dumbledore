@@ -13,7 +13,7 @@ const NUM_USERS_PRODUCTION = 50000000;
 const COMMS_PER_USER_PER_DAY = 5;
 
 // --- Development Scale Parameters ---
-const NUM_USERS_TO_GENERATE = 500000;
+const NUM_USERS_TO_GENERATE = 2000000;
 const DAYS_OF_DATA_TO_GENERATE = 3; // Align with 3-day retention policy
 
 const USER_TYPES = ["premium", "standard", "trial"];
@@ -144,5 +144,4 @@ async function setupAndSeedDatabase() {
     }
 }
 
-// Run the setup function
 setupAndSeedDatabase();

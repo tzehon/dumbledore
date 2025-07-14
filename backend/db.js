@@ -7,7 +7,7 @@ const MONGO_URI = process.env.MONGO_URI;
 const DB_NAME = process.env.DB_NAME;
 
 let db;
-let client; // Store the client instance to enable transactions
+let client;
 
 async function connectToDb() {
     if (db) return db;
@@ -23,7 +23,6 @@ async function connectToDb() {
     }
 }
 
-// Function to get the client instance for starting sessions
 function getClient() {
     return client;
 }

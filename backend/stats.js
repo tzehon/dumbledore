@@ -9,7 +9,7 @@ const DB_NAME_STATS = process.env.DB_NAME;
 // --- Production scale numbers from PDF added for reference ---
 const NUM_USERS_PRODUCTION = 50000000;
 const DAYS_OF_DATA_PRODUCTION = 3;
-const NUM_USERS_TO_GENERATE = 500000; // Must match the value in setup.js
+const NUM_USERS_TO_GENERATE = 2000000; // Must match the value in setup.js
 const DAYS_OF_DATA_TO_GENERATE = 3; // Must match the value in setup.js
 
 // Helper function to format bytes into a readable string
@@ -42,7 +42,6 @@ async function getAndDisplayStats() {
         const totalIndexSize = commsStats.totalIndexSize;
         console.log(`\nTOTAL Database On-Disk Size: ${formatBytes(totalOnDiskSize)} (Data: ${formatBytes(totalDataOnDisk)}, Indexes: ${formatBytes(totalIndexSize)})`);
 
-        // --- FIX: Clarified scaling factor and log output ---
         // The scaling factor is the ratio of total production documents to total development documents.
         const totalProductionDocuments = NUM_USERS_PRODUCTION * DAYS_OF_DATA_PRODUCTION;
         const totalDevelopmentDocuments = NUM_USERS_TO_GENERATE * DAYS_OF_DATA_TO_GENERATE;
