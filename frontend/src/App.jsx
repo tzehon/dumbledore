@@ -10,13 +10,18 @@ export default function App() {
   const [view, setView] = useState('dashboard'); // 'dashboard' or 'campaign'
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [error, setError] = useState(null);
-  const [lookupUserId, setLookupUserId] = useState('1001');
+  const [lookupUserId, setLookupUserId] = useState('1001'); // The value in the input box
+  const [searchedUserId, setSearchedUserId] = useState('1001'); // The ID that has been searched for
 
-  // Fetch communications when a user or date changes
+  // Fetch communications when a searched user or date changes
   const fetchCommunications = useCallback((userId, date) => {
     if (!userId) return;
     setIsLoadingComms(true);
     setError(null);
+
+    const mongoQuery = `db.getCollection('communications').findOne({ "user.id": ${parseInt(userId)}, day: ISODate("${date}T00:00:00.000Z") })`;
+    console.log("Running Query for Req B & E:", mongoQuery);
+
     fetch(`${API_BASE_URL}/communications/user/${userId}?date=${date}`)
       .then(res => {
         if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
@@ -34,10 +39,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (lookupUserId) {
-        fetchCommunications(lookupUserId, selectedDate);
+    if (searchedUserId) {
+        fetchCommunications(searchedUserId, selectedDate);
     }
-  }, [lookupUserId, selectedDate, fetchCommunications]);
+  }, [searchedUserId, selectedDate, fetchCommunications]);
 
 
   const handleDateChange = (e) => {
@@ -45,10 +50,14 @@ export default function App() {
     setSelectedDate(newDate);
   }
 
+  const handleSearch = () => {
+    setSearchedUserId(lookupUserId);
+  }
+
   const handleUpdateStatus = (comm, newStatus) => {
     setError(null);
     const payload = {
-      userId: parseInt(lookupUserId),
+      userId: parseInt(searchedUserId),
       dispatch_time: comm.dispatch_time,
       templateId: comm.metadata.template_id,
       trackingId: comm.metadata.tracking_id,
@@ -64,7 +73,7 @@ export default function App() {
         if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
         return res.json();
     })
-    .then(() => fetchCommunications(lookupUserId, selectedDate)) // Refresh data
+    .then(() => fetchCommunications(searchedUserId, selectedDate)) // Refresh data
     .catch(err => {
         console.error("Update status error:", err);
         setError("Failed to update status. Please try again.");
@@ -72,7 +81,7 @@ export default function App() {
   };
 
   const handleSendNewComm = (count) => {
-    if (!lookupUserId || count < 1) return;
+    if (!searchedUserId || count < 1) return;
     setError(null);
     const templateId = `template_${String(Math.floor(Math.random() * 20) + 1).padStart(3, '0')}`;
     const trackingId = `track_${String(Math.floor(Math.random() * 10) + 1).padStart(3, '0')}`;
@@ -81,7 +90,7 @@ export default function App() {
     fetch(`${API_BASE_URL}/communications`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: parseInt(lookupUserId), userType, templateId, trackingId, count: parseInt(count) })
+        body: JSON.stringify({ userId: parseInt(searchedUserId), userType, templateId, trackingId, count: parseInt(count) })
     })
     .then(async res => {
         if (!res.ok) {
@@ -93,7 +102,7 @@ export default function App() {
     .then(() => {
         const today = new Date().toISOString().split('T')[0];
         if (selectedDate === today) {
-            fetchCommunications(lookupUserId, selectedDate);
+            fetchCommunications(searchedUserId, selectedDate);
         } else {
             alert(`${count} new communication(s) sent for today.`);
         }
@@ -105,7 +114,7 @@ export default function App() {
   };
 
   const handleReplaceComms = () => {
-    if (!lookupUserId) return;
+    if (!searchedUserId) return;
     setError(null);
 
     const mockNewComms = [
@@ -127,7 +136,7 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            userId: parseInt(lookupUserId),
+            userId: parseInt(searchedUserId),
             date: selectedDate,
             communications: mockNewComms
         })
@@ -138,7 +147,7 @@ export default function App() {
     })
     .then(() => {
         alert(`Communications for ${selectedDate} have been replaced.`);
-        fetchCommunications(lookupUserId, selectedDate); // Refresh data
+        fetchCommunications(searchedUserId, selectedDate); // Refresh data
     })
     .catch(err => {
         console.error("Replace comms error:", err);
@@ -162,6 +171,7 @@ export default function App() {
             onDateChange={handleDateChange}
             lookupUserId={lookupUserId}
             setLookupUserId={setLookupUserId}
+            onSearch={handleSearch}
           />
         ) : (
           <CampaignView />
@@ -172,6 +182,19 @@ export default function App() {
 }
 
 // --- UI Components ---
+
+function Tooltip({ text }) {
+    return (
+        <div className="relative flex items-center group">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+            </svg>
+            <div className="absolute bottom-full mb-2 w-64 bg-gray-800 text-white text-xs rounded py-2 px-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
+                {text}
+            </div>
+        </div>
+    );
+}
 
 function ErrorMessage({ message }) {
     return (
@@ -199,13 +222,14 @@ function Header({ setView, currentView }) {
   );
 }
 
-function Dashboard({ communications, isLoadingComms, onUpdateStatus, onSendNewComm, onReplaceComms, selectedDate, onDateChange, lookupUserId, setLookupUserId }) {
+function Dashboard({ communications, isLoadingComms, onUpdateStatus, onSendNewComm, onReplaceComms, selectedDate, onDateChange, lookupUserId, setLookupUserId, onSearch }) {
   return (
     <div>
       <UserLookup
         lookupUserId={lookupUserId}
         setLookupUserId={setLookupUserId}
         onSendNewComm={onSendNewComm}
+        onSearch={onSearch}
       />
       <CommunicationsLog
           communications={communications}
@@ -219,8 +243,15 @@ function Dashboard({ communications, isLoadingComms, onUpdateStatus, onSendNewCo
   );
 }
 
-function UserLookup({ lookupUserId, setLookupUserId, onSendNewComm }) {
+function UserLookup({ lookupUserId, setLookupUserId, onSendNewComm, onSearch }) {
     const [count, setCount] = useState(1);
+
+    const handleKeyDown = (e) => {
+        if (e.key === 'Enter') {
+            onSearch();
+        }
+    }
+
     return (
         <div className="bg-white p-6 rounded-lg shadow mb-6">
         <div className="flex justify-between items-center">
@@ -231,8 +262,12 @@ function UserLookup({ lookupUserId, setLookupUserId, onSendNewComm }) {
                     type="number"
                     value={lookupUserId}
                     onChange={(e) => setLookupUserId(e.target.value)}
+                    onKeyDown={handleKeyDown}
                     className="p-2 border border-slate-300 rounded-md shadow-sm w-48"
                 />
+                <button onClick={onSearch} className="bg-gray-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-gray-700 transition-colors shadow">
+                    Search
+                </button>
             </div>
             <div className="flex items-center gap-2">
                 <input
@@ -245,6 +280,7 @@ function UserLookup({ lookupUserId, setLookupUserId, onSendNewComm }) {
                 <button onClick={() => onSendNewComm(count)} className="bg-blue-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-600 transition-colors shadow">
                     Append Comm(s) (Req A)
                 </button>
+                <Tooltip text="Appends the specified number of new, random communications for the current user for today." />
             </div>
         </div>
         </div>
@@ -258,9 +294,12 @@ function CommunicationsLog({ communications, isLoading, onUpdateStatus, onReplac
         <h3 className="text-lg font-semibold text-slate-700">Communications Log</h3>
         <div className="flex items-center gap-4">
           <input type="date" value={selectedDate} onChange={onDateChange} className="p-1 border border-slate-300 rounded-md shadow-sm"/>
-          <button onClick={onReplaceComms} className="bg-amber-500 text-white px-3 py-1.5 rounded-lg text-sm font-semibold hover:bg-amber-600 transition-colors shadow">
-            Replace Today's Comms (Req C)
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={onReplaceComms} className="bg-amber-500 text-white px-3 py-1.5 rounded-lg text-sm font-semibold hover:bg-amber-600 transition-colors shadow">
+                Replace Today's Comms (Req C)
+            </button>
+            <Tooltip text="Replaces all communications for the selected date with two mock 'REPLACED' events." />
+          </div>
         </div>
       </div>
       <div className="space-y-3">
