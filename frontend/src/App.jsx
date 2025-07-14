@@ -156,7 +156,7 @@ export default function App() {
   };
 
   return (
-    <div className="bg-slate-100 min-h-screen font-sans">
+    <div className="bg-gray-50 min-h-screen font-sans">
       <Header setView={setView} currentView={view} />
       <main className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
         {error && <ErrorMessage message={error} />}
@@ -189,7 +189,7 @@ function Tooltip({ text }) {
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
             </svg>
-            <div className="absolute bottom-full mb-2 w-64 bg-gray-800 text-white text-xs rounded py-2 px-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
+            <div className="absolute bottom-full mb-2 w-64 bg-gray-900 text-white text-xs rounded py-2 px-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-10">
                 {text}
             </div>
         </div>
@@ -210,12 +210,12 @@ function Header({ setView, currentView }) {
     <header className="bg-white shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
         <div className="flex items-center space-x-3">
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-slate-700" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
-          <h1 className="text-2xl font-bold text-slate-800">Internal Comms Capping Tool</h1>
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
+          <h1 className="text-2xl font-bold text-gray-800">Internal Comms Capping Tool</h1>
         </div>
-        <nav className="flex space-x-2 bg-slate-200 p-1 rounded-lg">
-          <button onClick={() => setView('dashboard')} className={`px-4 py-1.5 text-sm font-medium rounded-md ${currentView === 'dashboard' ? 'bg-white text-slate-700 shadow' : 'text-slate-600 hover:bg-slate-300'}`}>User Lookup</button>
-          <button onClick={() => setView('campaign')} className={`px-4 py-1.5 text-sm font-medium rounded-md ${currentView === 'campaign' ? 'bg-white text-slate-700 shadow' : 'text-slate-600 hover:bg-slate-300'}`}>Campaign Tool</button>
+        <nav className="flex space-x-2 bg-gray-200 p-1 rounded-lg">
+          <button onClick={() => setView('dashboard')} className={`px-4 py-1.5 text-sm font-medium rounded-md ${currentView === 'dashboard' ? 'bg-white text-gray-700 shadow' : 'text-gray-600 hover:bg-gray-300'}`}>User Lookup</button>
+          <button onClick={() => setView('campaign')} className={`px-4 py-1.5 text-sm font-medium rounded-md ${currentView === 'campaign' ? 'bg-white text-gray-700 shadow' : 'text-gray-600 hover:bg-gray-300'}`}>Campaign Tool</button>
         </nav>
       </div>
     </header>
@@ -256,16 +256,16 @@ function UserLookup({ lookupUserId, setLookupUserId, onSendNewComm, onSearch }) 
         <div className="bg-white p-6 rounded-lg shadow mb-6">
         <div className="flex justify-between items-center">
             <div className="flex items-center gap-4">
-                <label htmlFor="userIdInput" className="text-lg font-semibold text-slate-700">User ID Lookup (Req B & E):</label>
+                <label htmlFor="userIdInput" className="text-lg font-semibold text-gray-700">User ID Lookup (Req B & E):</label>
                 <input
                     id="userIdInput"
                     type="number"
                     value={lookupUserId}
                     onChange={(e) => setLookupUserId(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    className="p-2 border border-slate-300 rounded-md shadow-sm w-48"
+                    className="p-2 border border-gray-300 rounded-md shadow-sm w-48"
                 />
-                <button onClick={onSearch} className="bg-gray-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-gray-700 transition-colors shadow">
+                <button onClick={onSearch} className="bg-gray-800 text-white px-4 py-2 rounded-lg font-semibold hover:bg-gray-900 transition-colors shadow">
                     Search
                 </button>
             </div>
@@ -274,10 +274,10 @@ function UserLookup({ lookupUserId, setLookupUserId, onSendNewComm, onSearch }) 
                     type="number"
                     value={count}
                     onChange={(e) => setCount(e.target.value)}
-                    className="p-2 border border-slate-300 rounded-md shadow-sm w-20 text-center"
+                    className="p-2 border border-gray-300 rounded-md shadow-sm w-20 text-center"
                     min="1"
                 />
-                <button onClick={() => onSendNewComm(count)} className="bg-blue-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-600 transition-colors shadow">
+                <button onClick={() => onSendNewComm(count)} className="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 transition-colors shadow">
                     Append Comm(s) (Req A)
                 </button>
                 <Tooltip text="Appends the specified number of new, random communications for the current user for today." />
@@ -291,9 +291,9 @@ function CommunicationsLog({ communications, isLoading, onUpdateStatus, onReplac
   return (
     <div className="bg-white p-4 rounded-lg shadow">
       <div className="flex justify-between items-center mb-4 border-b pb-2">
-        <h3 className="text-lg font-semibold text-slate-700">Communications Log</h3>
+        <h3 className="text-lg font-semibold text-gray-700">Communications Log</h3>
         <div className="flex items-center gap-4">
-          <input type="date" value={selectedDate} onChange={onDateChange} className="p-1 border border-slate-300 rounded-md shadow-sm"/>
+          <input type="date" value={selectedDate} onChange={onDateChange} className="p-1 border border-gray-300 rounded-md shadow-sm"/>
           <div className="flex items-center gap-2">
             <button onClick={onReplaceComms} className="bg-amber-500 text-white px-3 py-1.5 rounded-lg text-sm font-semibold hover:bg-amber-600 transition-colors shadow">
                 Replace Today's Comms (Req C)
@@ -303,18 +303,18 @@ function CommunicationsLog({ communications, isLoading, onUpdateStatus, onReplac
         </div>
       </div>
       <div className="space-y-3">
-        {isLoading ? <p className="text-slate-500 text-center p-4">Loading...</p> :
-          communications.length === 0 ? <p className="text-slate-500 text-center p-4">No communications found for this date.</p> :
+        {isLoading ? <p className="text-gray-500 text-center p-4">Loading...</p> :
+          communications.length === 0 ? <p className="text-gray-500 text-center p-4">No communications found for this date.</p> :
             communications.map(comm => (
-              <div key={comm.dispatch_time + comm.metadata.template_id} className="bg-slate-50 p-4 rounded-lg flex justify-between items-center">
+              <div key={comm.dispatch_time + comm.metadata.template_id} className="bg-gray-50 p-4 rounded-lg flex justify-between items-center">
                 <div>
-                  <p className="font-semibold text-slate-800">Template: {comm.metadata.template_id}</p>
-                  <p className="text-sm text-slate-500">At: {new Date(comm.dispatch_time).toLocaleTimeString()} | Tracking ID: {comm.metadata.tracking_id}</p>
+                  <p className="font-semibold text-gray-800">Template: {comm.metadata.template_id}</p>
+                  <p className="text-sm text-gray-500">At: {new Date(comm.dispatch_time).toLocaleTimeString()} | Tracking ID: {comm.metadata.tracking_id}</p>
                 </div>
                 <div className="flex items-center space-x-2">
                     <span className={`px-2 py-1 text-xs font-bold rounded-full ${comm.status === 'sent' ? 'bg-blue-100 text-blue-800' : comm.status === 'opened' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`}>{comm.status}</span>
                     {comm.status === 'sent' && (
-                        <button onClick={() => onUpdateStatus(comm, 'opened')} className="text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold py-1 px-2 rounded-md">Mark as Opened (Req F)</button>
+                        <button onClick={() => onUpdateStatus(comm, 'opened')} className="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold py-1 px-2 rounded-md">Mark as Opened (Req F)</button>
                     )}
                 </div>
               </div>
@@ -385,7 +385,6 @@ function CampaignView() {
         startOfHour.setUTCHours(parseInt(params.hour), 0, 0, 0);
         const endOfHour = new Date(startOfHour.getTime() + 60 * 60 * 1000);
 
-        // --- CHANGE: Build full query string for logging ---
         const mongoQuery = `db.getCollection('communications').distinct("user.id", { day: ISODate("${params.date}T00:00:00.000Z"), events: { $elemMatch: { "dispatch_time": { $gte: ISODate("${startOfHour.toISOString()}"), $lt: ISODate("${endOfHour.toISOString()}") }, "metadata.template_id": "${params.templateId}", "metadata.tracking_id": "${params.trackingId}" } } })`;
         console.log("Running Query for Req D:", mongoQuery);
 
@@ -412,38 +411,37 @@ function CampaignView() {
 
     return (
         <div className="bg-white p-6 rounded-lg shadow">
-            <h2 className="text-xl font-bold text-slate-800 mb-4">Find Distinct Users for Campaign (Req D)</h2>
+            <h2 className="text-xl font-bold text-gray-800 mb-4">Find Distinct Users for Campaign (Req D)</h2>
             {error && <ErrorMessage message={error} />}
             <form onSubmit={handleSearch} className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end mb-6">
                 <div>
-                    <label className="block text-sm font-medium text-slate-600">Date</label>
-                    <input type="date" name="date" value={params.date} onChange={handleChange} className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"/>
+                    <label className="block text-sm font-medium text-gray-600">Date</label>
+                    <input type="date" name="date" value={params.date} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"/>
                 </div>
                 <div>
-                    <label className="block text-sm font-medium text-slate-600">Hour (0-23)</label>
-                    <input type="number" name="hour" min="0" max="23" value={params.hour} onChange={handleChange} className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"/>
+                    <label className="block text-sm font-medium text-gray-600">Hour (0-23)</label>
+                    <input type="number" name="hour" min="0" max="23" value={params.hour} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"/>
                 </div>
                 <div>
-                    <label className="block text-sm font-medium text-slate-600">Template ID</label>
-                    <select name="templateId" value={params.templateId} onChange={handleChange} className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                    <label className="block text-sm font-medium text-gray-600">Template ID</label>
+                    <select name="templateId" value={params.templateId} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500">
                         {templates.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                 </div>
                 <div>
-                    <label className="block text-sm font-medium text-slate-600">Tracking ID</label>
-                    {/* --- CHANGE: Replaced text input with a dropdown --- */}
-                    <select name="trackingId" value={params.trackingId} onChange={handleChange} className="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                    <label className="block text-sm font-medium text-gray-600">Tracking ID</label>
+                    <select name="trackingId" value={params.trackingId} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500">
                         {trackingIds.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                 </div>
-                <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition-colors shadow h-10">Search</button>
+                <button type="submit" className="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 transition-colors shadow h-10">Search</button>
             </form>
             <div>
                 {isLoading && <p>Loading results...</p>}
                 {distinctUsers && (
                     <div>
                         <h3 className="font-semibold text-lg">Found {distinctUsers.length} unique users:</h3>
-                        <div className="mt-2 bg-slate-100 p-4 rounded-md max-h-60 overflow-y-auto">
+                        <div className="mt-2 bg-gray-100 p-4 rounded-md max-h-60 overflow-y-auto">
                             {distinctUsers.length > 0 ? distinctUsers.join(', ') : 'No users found for this criteria.'}
                         </div>
                     </div>
