@@ -26,7 +26,14 @@ app.get('/api/communications/user/:id', async (req, res) => {
     startOfDay.setUTCHours(0, 0, 0, 0);
 
     const query = { "user.id": userId, day: startOfDay };
-    console.log("Executing Req B&E: db.collection('communications').findOne(", JSON.stringify(query, null, 2), ")");
+
+    console.log("\n--- Backend Query Log (Req B & E) ---");
+    console.log("db.collection('communications').findOne(", JSON.stringify(query, null, 2), ")");
+    try {
+        const explain = await db.collection('communications').find(query).explain("executionStats");
+        console.log(` -> Query Plan: Used index '${explain.executionStats.executionStages.inputStage.indexName}'`);
+    } catch (e) { console.error("Explain failed:", e.message)}
+
 
     const bucket = await db.collection('communications').findOne(query);
 
@@ -69,7 +76,8 @@ app.post('/api/communications', async (req, res) => {
             expireAt: expireAt
         }
     };
-    console.log("Executing Req A: db.collection('communications').updateOne(", JSON.stringify(filter, null, 2), ",", JSON.stringify(update, null, 2), ", { upsert: true })");
+    console.log("\n--- Backend Query Log (Req A) ---");
+    console.log("db.collection('communications').updateOne(", JSON.stringify(filter, null, 2), ",", JSON.stringify(update, null, 2), ", { upsert: true })");
 
     const result = await db.collection('communications').updateOne(filter, update, { upsert: true });
 
@@ -102,7 +110,8 @@ app.put('/api/communications/status', async (req, res) => {
             "elem.metadata.tracking_id": trackingId
         }]
     };
-    console.log("Executing Req F: db.collection('communications').updateOne(", JSON.stringify(filter, null, 2), ",", JSON.stringify(update, null, 2), ",", JSON.stringify(options, null, 2), ")");
+    console.log("\n--- Backend Query Log (Req F) ---");
+    console.log("db.collection('communications').updateOne(", JSON.stringify(filter, null, 2), ",", JSON.stringify(update, null, 2), ",", JSON.stringify(options, null, 2), ")");
 
     const result = await db.collection('communications').updateOne(filter, update, options);
 
@@ -141,7 +150,12 @@ app.get('/api/campaigns/distinct-users', async (req, res) => {
             }
         }
     };
-    console.log("Executing Req D: db.collection('communications').distinct('user.id',", JSON.stringify(query, null, 2), ")");
+    console.log("\n--- Backend Query Log (Req D) ---");
+    console.log("db.collection('communications').distinct('user.id',", JSON.stringify(query, null, 2), ")");
+    try {
+        const explain = await db.collection('communications').find(query).explain("executionStats");
+        console.log(` -> Query Plan: Used index '${explain.executionStats.executionStages.inputStage.indexName}'`);
+    } catch(e) { console.error("Explain failed:", e.message) }
 
     const distinctUsers = await db.collection('communications').distinct("user.id", query);
 
@@ -168,7 +182,8 @@ app.post('/api/communications/replace', async (req, res) => {
 
     const filter = { "user.id": userId, day: startOfDay };
     const update = { $set: { events: newEvents, event_count: newEvents.length } };
-    console.log("Executing Req C: db.collection('communications').updateOne(", JSON.stringify(filter, null, 2), ",", JSON.stringify(update, null, 2), ", { upsert: true })");
+    console.log("\n--- Backend Query Log (Req C) ---");
+    console.log("db.collection('communications').updateOne(", JSON.stringify(filter, null, 2), ",", JSON.stringify(update, null, 2), ", { upsert: true })");
 
     const result = await db.collection('communications').updateOne(filter, update, { upsert: true });
 

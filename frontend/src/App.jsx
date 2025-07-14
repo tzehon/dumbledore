@@ -22,7 +22,8 @@ export default function App() {
     const startOfDay = new Date(date);
     startOfDay.setUTCHours(0,0,0,0);
     const query = { "user.id": parseInt(userId), day: startOfDay };
-    console.log("Executing Req B & E: db.collection('communications').findOne(", JSON.stringify(query, null, 2), ")");
+    console.log("--- Frontend Query Log (Req B & E) ---");
+    console.log("db.collection('communications').findOne(", JSON.stringify(query, null, 2), ")");
 
     fetch(`${API_BASE_URL}/communications/user/${userId}?date=${date}`)
       .then(res => {
@@ -54,6 +55,7 @@ export default function App() {
 
   const handleSearch = () => {
     setSearchedUserId(lookupUserId);
+    fetchCommunications(lookupUserId, selectedDate);
   }
 
   const handleUpdateStatus = (comm, newStatus) => {
@@ -119,15 +121,16 @@ export default function App() {
     if (!searchedUserId) return;
     setError(null);
 
+    const now = new Date();
     const mockNewComms = [
         {
-            dispatch_time: new Date(),
+            dispatch_time: new Date(now.getTime() - 1000), // Ensure slightly different timestamps
             metadata: { tracking_id: "REPLACED-01", template_id: "REPLACE-TPL" },
             content_score: 1.0,
             status: "replaced"
         },
         {
-            dispatch_time: new Date(),
+            dispatch_time: now,
             metadata: { tracking_id: "REPLACED-02", template_id: "REPLACE-TPL" },
             content_score: 1.0,
             status: "replaced"
@@ -213,7 +216,7 @@ function Header({ setView, currentView }) {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
         <div className="flex items-center space-x-3">
           <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
-          <h1 className="text-2xl font-bold text-gray-800">Internal Comms Capping Tool</h1>
+          <h1 className="text-2xl font-bold text-gray-800">Dumbledore - SmartComms</h1>
         </div>
         <nav className="flex space-x-2 bg-gray-200 p-1 rounded-lg">
           <button onClick={() => setView('dashboard')} className={`px-4 py-1.5 text-sm font-medium rounded-md ${currentView === 'dashboard' ? 'bg-white text-gray-700 shadow' : 'text-gray-600 hover:bg-gray-300'}`}>User Lookup</button>
@@ -308,7 +311,8 @@ function CommunicationsLog({ communications, isLoading, onUpdateStatus, onReplac
         {isLoading ? <p className="text-gray-500 text-center p-4">Loading...</p> :
           communications.length === 0 ? <p className="text-gray-500 text-center p-4">No communications found for this date.</p> :
             communications.map(comm => (
-              <div key={comm.dispatch_time + comm.metadata.template_id} className="bg-gray-50 p-4 rounded-lg flex justify-between items-center">
+              // --- FIX: Use a more robust key ---
+              <div key={comm.dispatch_time + comm.metadata.tracking_id} className="bg-gray-50 p-4 rounded-lg flex justify-between items-center">
                 <div>
                   <p className="font-semibold text-gray-800">Template: {comm.metadata.template_id}</p>
                   <p className="text-sm text-gray-500">At: {new Date(comm.dispatch_time).toLocaleTimeString()} | Tracking ID: {comm.metadata.tracking_id}</p>
@@ -383,12 +387,14 @@ function CampaignView() {
         setDistinctUsers(null);
         setError(null);
 
+        const startOfDay = new Date(params.date);
+        startOfDay.setUTCHours(0, 0, 0, 0);
         const startOfHour = new Date(params.date);
         startOfHour.setUTCHours(parseInt(params.hour), 0, 0, 0);
         const endOfHour = new Date(startOfHour.getTime() + 60 * 60 * 1000);
 
         const query = {
-            day: new Date(params.date + 'T00:00:00.000Z'),
+            day: startOfDay,
             events: {
                 $elemMatch: {
                     "dispatch_time": { $gte: startOfHour, $lt: endOfHour },
@@ -397,7 +403,8 @@ function CampaignView() {
                 }
             }
         };
-        console.log("Running Query for Req D: db.collection('communications').distinct('user.id',", JSON.stringify(query, null, 2), ")");
+        console.log("--- Frontend Query Log (Req D) ---");
+        console.log("db.collection('communications').distinct('user.id',", JSON.stringify(query, null, 2), ")");
 
         const queryString = new URLSearchParams(params).toString();
         fetch(`${API_BASE_URL}/campaigns/distinct-users?${queryString}`)
