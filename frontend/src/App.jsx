@@ -12,12 +12,16 @@ export default function App() {
   const [error, setError] = useState(null);
   const [lookupUserId, setLookupUserId] = useState('1001'); // The value in the input box
   const [searchedUserId, setSearchedUserId] = useState('1001'); // The ID that has been searched for
+  const [queryDuration, setQueryDuration] = useState(null); // New state for query duration
 
   // Fetch communications when a searched user or date changes
   const fetchCommunications = useCallback((userId, date) => {
     if (!userId) return;
     setIsLoadingComms(true);
     setError(null);
+    setQueryDuration(null); // Reset duration
+
+    const startTime = performance.now();
 
     const startOfDay = new Date(date);
     startOfDay.setUTCHours(0,0,0,0);
@@ -32,11 +36,14 @@ export default function App() {
       })
       .then(data => {
         setCommunications(data);
-        setIsLoadingComms(false);
       })
       .catch(error => {
         console.error("Fetch communications error:", error);
         setError("Failed to fetch communications. Please check the server connection or user ID.");
+      })
+      .finally(() => {
+        const endTime = performance.now();
+        setQueryDuration(Math.round(endTime - startTime));
         setIsLoadingComms(false);
       });
   }, []);
@@ -177,6 +184,7 @@ export default function App() {
             lookupUserId={lookupUserId}
             setLookupUserId={setLookupUserId}
             onSearch={handleSearch}
+            queryDuration={queryDuration}
           />
         ) : (
           <CampaignView />
@@ -226,7 +234,7 @@ function Header({ setView, currentView }) {
   );
 }
 
-function Dashboard({ communications, isLoadingComms, onUpdateStatus, onSendNewComm, onReplaceComms, selectedDate, onDateChange, lookupUserId, setLookupUserId, onSearch }) {
+function Dashboard({ communications, isLoadingComms, onUpdateStatus, onSendNewComm, onReplaceComms, selectedDate, onDateChange, lookupUserId, setLookupUserId, onSearch, queryDuration }) {
   return (
     <div>
       <UserLookup
@@ -242,6 +250,7 @@ function Dashboard({ communications, isLoadingComms, onUpdateStatus, onSendNewCo
           onReplaceComms={onReplaceComms}
           selectedDate={selectedDate}
           onDateChange={onDateChange}
+          queryDuration={queryDuration}
       />
     </div>
   );
@@ -260,7 +269,7 @@ function UserLookup({ lookupUserId, setLookupUserId, onSendNewComm, onSearch }) 
         <div className="bg-white p-6 rounded-lg shadow mb-6">
         <div className="flex justify-between items-center">
             <div className="flex items-center gap-4">
-                <label htmlFor="userIdInput" className="text-lg font-semibold text-gray-700">User ID Lookup (Req B & E):</label>
+                <label htmlFor="userIdInput" className="text-lg font-semibold text-gray-700">User ID Lookup (Req B & E - Read):</label>
                 <input
                     id="userIdInput"
                     type="number"
@@ -282,7 +291,7 @@ function UserLookup({ lookupUserId, setLookupUserId, onSendNewComm, onSearch }) 
                     min="1"
                 />
                 <button onClick={() => onSendNewComm(count)} className="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 transition-colors shadow">
-                    Append Comm(s) (Req A)
+                    Append Comm(s) (Req A - Write)
                 </button>
                 <Tooltip text="Appends the specified number of new, random communications for the current user for today." />
             </div>
@@ -291,16 +300,19 @@ function UserLookup({ lookupUserId, setLookupUserId, onSendNewComm, onSearch }) 
     );
 }
 
-function CommunicationsLog({ communications, isLoading, onUpdateStatus, onReplaceComms, selectedDate, onDateChange }) {
+function CommunicationsLog({ communications, isLoading, onUpdateStatus, onReplaceComms, selectedDate, onDateChange, queryDuration }) {
   return (
     <div className="bg-white p-4 rounded-lg shadow">
       <div className="flex justify-between items-center mb-4 border-b pb-2">
-        <h3 className="text-lg font-semibold text-gray-700">Communications Log</h3>
+        <div className="flex items-center gap-2">
+            <h3 className="text-lg font-semibold text-gray-700">Communications Log</h3>
+            {queryDuration && <span className="text-sm text-gray-500">(Query took: {queryDuration}ms)</span>}
+        </div>
         <div className="flex items-center gap-4">
           <input type="date" value={selectedDate} onChange={onDateChange} className="p-1 border border-gray-300 rounded-md shadow-sm"/>
           <div className="flex items-center gap-2">
             <button onClick={onReplaceComms} className="bg-amber-500 text-white px-3 py-1.5 rounded-lg text-sm font-semibold hover:bg-amber-600 transition-colors shadow">
-                Replace Today's Comms (Req C)
+                Replace Today's Comms (Req C - Write)
             </button>
             <Tooltip text="Replaces all communications for the selected date with two mock 'REPLACED' events." />
           </div>
@@ -318,7 +330,7 @@ function CommunicationsLog({ communications, isLoading, onUpdateStatus, onReplac
                 <div className="flex items-center space-x-2">
                     <span className={`px-2 py-1 text-xs font-bold rounded-full ${comm.status === 'sent' ? 'bg-blue-100 text-blue-800' : comm.status === 'opened' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`}>{comm.status}</span>
                     {comm.status === 'sent' && (
-                        <button onClick={() => onUpdateStatus(comm, 'opened')} className="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold py-1 px-2 rounded-md">Mark as Opened (Req F)</button>
+                        <button onClick={() => onUpdateStatus(comm, 'opened')} className="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold py-1 px-2 rounded-md">Mark as Opened (Req F - Write)</button>
                     )}
                 </div>
               </div>
@@ -341,8 +353,8 @@ function CampaignView() {
     const [distinctUsers, setDistinctUsers] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
-    // --- CHANGE: New loading state for dropdowns ---
     const [isLoadingDropdowns, setIsLoadingDropdowns] = useState(true);
+    const [campaignQueryDuration, setCampaignQueryDuration] = useState(null);
 
     useEffect(() => {
         setError(null);
@@ -376,6 +388,9 @@ function CampaignView() {
         setIsLoading(true);
         setDistinctUsers(null);
         setError(null);
+        setCampaignQueryDuration(null);
+
+        const startTime = performance.now();
 
         const startOfDay = new Date(params.date);
         startOfDay.setUTCHours(0, 0, 0, 0);
@@ -404,11 +419,14 @@ function CampaignView() {
             })
             .then(data => {
                 setDistinctUsers(data);
-                setIsLoading(false);
             })
             .catch(err => {
                 console.error("Campaign search error:", err);
                 setError("Failed to search for campaign users.");
+            })
+            .finally(() => {
+                const endTime = performance.now();
+                setCampaignQueryDuration(Math.round(endTime - startTime));
                 setIsLoading(false);
             });
     }
@@ -448,7 +466,10 @@ function CampaignView() {
                 {isLoading && <p>Loading results...</p>}
                 {distinctUsers && (
                     <div>
-                        <h3 className="font-semibold text-lg">Found {distinctUsers.length} unique users:</h3>
+                        <h3 className="font-semibold text-lg">
+                            Found {distinctUsers.length} unique users (Read)
+                            {campaignQueryDuration !== null && <span className="text-sm text-gray-500 ml-2">(Query took: {campaignQueryDuration}ms)</span>}
+                        </h3>
                         <div className="mt-2 bg-gray-100 p-4 rounded-md max-h-60 overflow-y-auto">
                             {distinctUsers.length > 0 ? distinctUsers.join(', ') : 'No users found for this criteria.'}
                         </div>
