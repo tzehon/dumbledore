@@ -78,6 +78,10 @@ app.post('/api/communications', async (req, res) => {
     };
     console.log("\n--- Backend Query Log (Req A) ---");
     console.log("db.collection('communications').updateOne(", JSON.stringify(filter, null, 2), ",", JSON.stringify(update, null, 2), ", { upsert: true })");
+    try {
+        const explain = await db.collection('communications').find(filter).explain("executionStats");
+        console.log(` -> Find Plan: Used index '${explain.executionStats.executionStages.inputStage.indexName}'`);
+    } catch (e) { console.error("Explain for write failed:", e.message)}
 
     const result = await db.collection('communications').updateOne(filter, update, { upsert: true });
 
@@ -112,6 +116,10 @@ app.put('/api/communications/status', async (req, res) => {
     };
     console.log("\n--- Backend Query Log (Req F) ---");
     console.log("db.collection('communications').updateOne(", JSON.stringify(filter, null, 2), ",", JSON.stringify(update, null, 2), ",", JSON.stringify(options, null, 2), ")");
+    try {
+        const explain = await db.collection('communications').find(filter).explain("executionStats");
+        console.log(` -> Find Plan: Used index '${explain.executionStats.executionStages.inputStage.indexName}'`);
+    } catch (e) { console.error("Explain for write failed:", e.message)}
 
     const result = await db.collection('communications').updateOne(filter, update, options);
 
@@ -184,6 +192,10 @@ app.post('/api/communications/replace', async (req, res) => {
     const update = { $set: { events: newEvents, event_count: newEvents.length } };
     console.log("\n--- Backend Query Log (Req C) ---");
     console.log("db.collection('communications').updateOne(", JSON.stringify(filter, null, 2), ",", JSON.stringify(update, null, 2), ", { upsert: true })");
+    try {
+        const explain = await db.collection('communications').find(filter).explain("executionStats");
+        console.log(` -> Find Plan: Used index '${explain.executionStats.executionStages.inputStage.indexName}'`);
+    } catch (e) { console.error("Explain for write failed:", e.message)}
 
     const result = await db.collection('communications').updateOne(filter, update, { upsert: true });
 
