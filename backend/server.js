@@ -9,6 +9,35 @@ const port = process.env.PORT || 5001;
 app.use(cors());
 app.use(express.json());
 
+// --- Helper for logging query plans ---
+async function logQueryPlan(db, collectionName, query) {
+    try {
+        const explain = await db.collection(collectionName).find(query).explain("executionStats");
+        if (explain.executionStats.executionStages.stage === 'COLLSCAN') {
+            console.log(` -> Query Plan: Collection Scan (COLLSCAN) - Consider adding an index.`);
+        } else {
+            console.log(` -> Query Plan: Used index '${explain.executionStats.executionStages.inputStage.indexName}'`);
+        }
+    } catch (e) {
+        console.error(" -> Explain failed:", e.message);
+    }
+}
+
+async function logAggregationPlan(db, collectionName, pipeline) {
+     try {
+        const explain = await db.collection(collectionName).aggregate(pipeline).explain("executionStats");
+        const stage = explain.stages[0].$cursor.queryPlanner.winningPlan.inputStage;
+        if (stage.stage === 'COLLSCAN') {
+            console.log(` -> Query Plan: Collection Scan (COLLSCAN) - Consider adding an index to support the aggregation.`);
+        } else {
+            console.log(` -> Query Plan: Used index '${stage.indexName}'`);
+        }
+    } catch (e) {
+        console.error(" -> Explain for aggregation failed:", e.message);
+    }
+}
+
+
 // --- API Endpoints ---
 
 // GET /api/communications/user/:id?date=YYYY-MM-DD
@@ -29,11 +58,7 @@ app.get('/api/communications/user/:id', async (req, res) => {
 
     console.log("\n--- Backend Query Log (Req B & E) ---");
     console.log("db.collection('communications').findOne(", JSON.stringify(query, null, 2), ")");
-    try {
-        const explain = await db.collection('communications').find(query).explain("executionStats");
-        console.log(` -> Query Plan: Used index '${explain.executionStats.executionStages.inputStage.indexName}'`);
-    } catch (e) { console.error("Explain failed:", e.message)}
-
+    await logQueryPlan(db, 'communications', query);
 
     const bucket = await db.collection('communications').findOne(query);
 
@@ -78,10 +103,7 @@ app.post('/api/communications', async (req, res) => {
     };
     console.log("\n--- Backend Query Log (Req A) ---");
     console.log("db.collection('communications').updateOne(", JSON.stringify(filter, null, 2), ",", JSON.stringify(update, null, 2), ", { upsert: true })");
-    try {
-        const explain = await db.collection('communications').find(filter).explain("executionStats");
-        console.log(` -> Find Plan: Used index '${explain.executionStats.executionStages.inputStage.indexName}'`);
-    } catch (e) { console.error("Explain for write failed:", e.message)}
+    await logQueryPlan(db, 'communications', filter);
 
     const result = await db.collection('communications').updateOne(filter, update, { upsert: true });
 
@@ -116,10 +138,7 @@ app.put('/api/communications/status', async (req, res) => {
     };
     console.log("\n--- Backend Query Log (Req F) ---");
     console.log("db.collection('communications').updateOne(", JSON.stringify(filter, null, 2), ",", JSON.stringify(update, null, 2), ",", JSON.stringify(options, null, 2), ")");
-    try {
-        const explain = await db.collection('communications').find(filter).explain("executionStats");
-        console.log(` -> Find Plan: Used index '${explain.executionStats.executionStages.inputStage.indexName}'`);
-    } catch (e) { console.error("Explain for write failed:", e.message)}
+    await logQueryPlan(db, 'communications', filter);
 
     const result = await db.collection('communications').updateOne(filter, update, options);
 
@@ -160,10 +179,7 @@ app.get('/api/campaigns/distinct-users', async (req, res) => {
     };
     console.log("\n--- Backend Query Log (Req D) ---");
     console.log("db.collection('communications').distinct('user.id',", JSON.stringify(query, null, 2), ")");
-    try {
-        const explain = await db.collection('communications').find(query).explain("executionStats");
-        console.log(` -> Query Plan: Used index '${explain.executionStats.executionStages.inputStage.indexName}'`);
-    } catch(e) { console.error("Explain failed:", e.message) }
+    await logQueryPlan(db, 'communications', query);
 
     const distinctUsers = await db.collection('communications').distinct("user.id", query);
 
@@ -192,10 +208,7 @@ app.post('/api/communications/replace', async (req, res) => {
     const update = { $set: { events: newEvents, event_count: newEvents.length } };
     console.log("\n--- Backend Query Log (Req C) ---");
     console.log("db.collection('communications').updateOne(", JSON.stringify(filter, null, 2), ",", JSON.stringify(update, null, 2), ", { upsert: true })");
-    try {
-        const explain = await db.collection('communications').find(filter).explain("executionStats");
-        console.log(` -> Find Plan: Used index '${explain.executionStats.executionStages.inputStage.indexName}'`);
-    } catch (e) { console.error("Explain for write failed:", e.message)}
+    await logQueryPlan(db, 'communications', filter);
 
     const result = await db.collection('communications').updateOne(filter, update, { upsert: true });
 
@@ -219,6 +232,8 @@ app.get('/api/templates', async (req, res) => {
     ];
     console.log("\n--- Backend Query Log (Get Templates) ---");
     console.log("db.collection('communications').aggregate(", JSON.stringify(pipeline, null, 2), ")");
+    await logAggregationPlan(db, 'communications', pipeline);
+
     const results = await db.collection('communications').aggregate(pipeline).toArray();
     const templates = results.map(doc => doc._id);
     res.json(templates);
@@ -233,6 +248,8 @@ app.get('/api/tracking-ids', async (req, res) => {
     ];
     console.log("\n--- Backend Query Log (Get Tracking IDs) ---");
     console.log("db.collection('communications').aggregate(", JSON.stringify(pipeline, null, 2), ")");
+    await logAggregationPlan(db, 'communications', pipeline);
+
     const results = await db.collection('communications').aggregate(pipeline).toArray();
     const trackingIds = results.map(doc => doc._id);
     res.json(trackingIds);
