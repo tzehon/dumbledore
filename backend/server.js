@@ -41,7 +41,6 @@ app.get('/api/communications/user/:id', async (req, res) => {
 // Requirement (A): Append Communication Blob data
 app.post('/api/communications', async (req, res) => {
     const db = await connectToDbForServer();
-    // --- CHANGE: Accept a 'count' parameter ---
     const { userId, userType, templateId, trackingId, count = 1 } = req.body;
 
     if (!userId || !userType || !templateId || !trackingId) {
@@ -53,12 +52,10 @@ app.post('/api/communications', async (req, res) => {
     startOfDay.setUTCHours(0, 0, 0, 0);
     const expireAt = new Date(startOfDay.getTime() + (7 * 24 * 60 * 60 * 1000));
 
-    // --- CHANGE: Removed frequency cap check ---
-
     let eventsToPush = [];
     for (let i = 0; i < count; i++) {
         eventsToPush.push({
-            dispatch_time: new Date(), // Give each a slightly different time
+            dispatch_time: new Date(),
             metadata: { tracking_id: trackingId, template_id: templateId },
             content_score: Math.random() * 0.4 + 0.6,
             status: "sent"
@@ -197,6 +194,7 @@ app.post('/api/communications/replace', async (req, res) => {
 });
 
 
+// --- CHANGE: Added new endpoint for tracking IDs ---
 // This endpoint is for demonstration and not directly from the PDF,
 // but it's needed for a realistic frontend.
 app.get('/api/templates', async (req, res) => {
@@ -208,6 +206,17 @@ app.get('/api/templates', async (req, res) => {
     ]).toArray();
     const templates = results.map(doc => doc._id);
     res.json(templates);
+});
+
+app.get('/api/tracking-ids', async (req, res) => {
+    const db = await connectToDbForServer();
+    const results = await db.collection('communications').aggregate([
+        { $unwind: "$events" },
+        { $group: { _id: '$events.metadata.tracking_id' } },
+        { $sort: { _id: 1 } }
+    ]).toArray();
+    const trackingIds = results.map(doc => doc._id);
+    res.json(trackingIds);
 });
 
 
