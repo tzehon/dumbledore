@@ -1,6 +1,6 @@
-# Communications Capping Tool - README
+# Dumbledore - SmartComms - README
 
-This document provides a complete guide to setting up, running, and managing the full-stack application for the internal communications capping tool.
+This document provides a complete guide to setting up, running, and managing the full-stack application for Dumbledore.
 
 ## 1. Project Overview
 
