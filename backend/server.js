@@ -23,21 +23,6 @@ async function logQueryPlan(db, collectionName, query) {
     }
 }
 
-async function logAggregationPlan(db, collectionName, pipeline) {
-     try {
-        const explain = await db.collection(collectionName).aggregate(pipeline).explain("executionStats");
-        const stage = explain.stages[0].$cursor.queryPlanner.winningPlan.inputStage;
-        if (stage.stage === 'COLLSCAN') {
-            console.log(` -> Query Plan: Collection Scan (COLLSCAN) - Consider adding an index to support the aggregation.`);
-        } else {
-            console.log(` -> Query Plan: Used index '${stage.indexName}'`);
-        }
-    } catch (e) {
-        console.error(" -> Explain for aggregation failed:", e.message);
-    }
-}
-
-
 // --- API Endpoints ---
 
 // GET /api/communications/user/:id?date=YYYY-MM-DD
@@ -57,7 +42,7 @@ app.get('/api/communications/user/:id', async (req, res) => {
     const query = { "user.id": userId, day: startOfDay };
 
     console.log("\n--- Backend Query Log (Req B & E) ---");
-    console.log("db.collection('communications').findOne(", JSON.stringify(query, null, 2), ")");
+    console.log(`db.collection('communications').findOne({ "user.id": ${userId}, day: ISODate("${startOfDay.toISOString()}") })`);
     await logQueryPlan(db, 'communications', query);
 
     const bucket = await db.collection('communications').findOne(query);
@@ -102,7 +87,7 @@ app.post('/api/communications', async (req, res) => {
         }
     };
     console.log("\n--- Backend Query Log (Req A) ---");
-    console.log("db.collection('communications').updateOne(", JSON.stringify(filter, null, 2), ",", JSON.stringify(update, null, 2), ", { upsert: true })");
+    console.log(`db.collection('communications').updateOne({ "user.id": ${userId}, day: ISODate("${startOfDay.toISOString()}") }, { ... }, { upsert: true })`);
     await logQueryPlan(db, 'communications', filter);
 
     const result = await db.collection('communications').updateOne(filter, update, { upsert: true });
@@ -137,7 +122,7 @@ app.put('/api/communications/status', async (req, res) => {
         }]
     };
     console.log("\n--- Backend Query Log (Req F) ---");
-    console.log("db.collection('communications').updateOne(", JSON.stringify(filter, null, 2), ",", JSON.stringify(update, null, 2), ",", JSON.stringify(options, null, 2), ")");
+    console.log(`db.collection('communications').updateOne({ "user.id": ${userId}, "events.dispatch_time": ISODate("${eventDispatchTime.toISOString()}"), ... }, { ... }, { ... })`);
     await logQueryPlan(db, 'communications', filter);
 
     const result = await db.collection('communications').updateOne(filter, update, options);
@@ -178,7 +163,7 @@ app.get('/api/campaigns/distinct-users', async (req, res) => {
         }
     };
     console.log("\n--- Backend Query Log (Req D) ---");
-    console.log("db.collection('communications').distinct('user.id',", JSON.stringify(query, null, 2), ")");
+    console.log(`db.collection('communications').distinct("user.id", { day: ISODate("${startOfDay.toISOString()}"), events: { $elemMatch: { "dispatch_time": { $gte: ISODate("${startOfHour.toISOString()}"), $lt: ISODate("${endOfHour.toISOString()}") }, "metadata.template_id": "${templateId}", "metadata.tracking_id": "${trackingId}" } } })`);
     await logQueryPlan(db, 'communications', query);
 
     const distinctUsers = await db.collection('communications').distinct("user.id", query);
@@ -207,7 +192,7 @@ app.post('/api/communications/replace', async (req, res) => {
     const filter = { "user.id": userId, day: startOfDay };
     const update = { $set: { events: newEvents, event_count: newEvents.length } };
     console.log("\n--- Backend Query Log (Req C) ---");
-    console.log("db.collection('communications').updateOne(", JSON.stringify(filter, null, 2), ",", JSON.stringify(update, null, 2), ", { upsert: true })");
+    console.log(`db.collection('communications').updateOne({ "user.id": ${userId}, day: ISODate("${startOfDay.toISOString()}") }, { ... }, { upsert: true })`);
     await logQueryPlan(db, 'communications', filter);
 
     const result = await db.collection('communications').updateOne(filter, update, { upsert: true });
