@@ -311,31 +311,19 @@ function generateMarkdownReport(results, collectionStats, timestamp) {
     lines.push('|--------|--------|');
     lines.push(`| Documents | ${collectionStats.documents.toLocaleString()} |`);
     lines.push(`| Server Tier | ${collectionStats.serverTier} |`);
+    const totalSamples = Object.values(results)[0].totalSamples;
+    lines.push(`| Sample Size | ${totalSamples.toLocaleString()} requests per endpoint |`);
     lines.push('');
     
     // Performance results
     lines.push('## API Performance Results');
     lines.push('');
-    lines.push('| Requirement | P50 | P90 | P95 | P99 | P99.9 | Avg | StdDev |');
-    lines.push('|-------------|-----|-----|-----|-----|-------|-----|--------|');
+    lines.push('| Requirement | P50 (Median) | P90 | P95 | P99 | Avg | StdDev |');
+    lines.push('|-------------|--------------|-----|-----|-----|-----|--------|');
     
     Object.entries(results).forEach(([name, stats]) => {
-        lines.push(`| ${name} | ${stats.p50}ms | ${stats.p90}ms | ${stats.p95}ms | ${stats.p99}ms | ${stats.p99_9}ms | ${stats.avg}ms | ${stats.stdDev}ms |`);
+        lines.push(`| ${name} | ${stats.p50}ms | ${stats.p90}ms | ${stats.p95}ms | ${stats.p99}ms | ${stats.avg}ms | ${stats.stdDev}ms |`);
     });
-    
-    lines.push('');
-    lines.push('## Performance Summary');
-    lines.push('');
-    
-    const allP50s = Object.values(results).map(r => r.p50);
-    const allP99s = Object.values(results).map(r => r.p99);
-    const overallP50 = Math.round(allP50s.reduce((a, b) => a + b, 0) / allP50s.length);
-    const overallP99 = Math.round(allP99s.reduce((a, b) => a + b, 0) / allP99s.length);
-    const totalSamples = Object.values(results)[0].totalSamples;
-    
-    lines.push(`- **Sample Size:** ${totalSamples.toLocaleString()} requests per endpoint`);
-    lines.push(`- **Overall P50:** ${overallP50}ms`);
-    lines.push(`- **Overall P99:** ${overallP99}ms`);
     
     return lines.join('\n');
 }
