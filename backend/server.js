@@ -4,13 +4,53 @@ const { connectToDb: connectToDbForServer, getClient } = require('./db');
 const { ObjectId: ObjectIdForServer } = require('mongodb');
 
 const app = express();
-const port = process.env.PORT || 5001;
+const DEBUG_MODE = process.argv.includes('--debug') || process.env.DEBUG_MODE === 'true';
+const port = process.env.PORT || (DEBUG_MODE ? 5002 : 5001);
 
-app.use(cors());
+// Optimized CORS and middleware for performance
+if (DEBUG_MODE) {
+    app.use(cors({
+        exposedHeaders: ['X-Database-Latency', 'X-Backend-Processing-Latency']
+    }));
+} else {
+    // Production: minimal CORS with timing headers
+    app.use(cors({
+        exposedHeaders: ['X-Total-Backend-Latency']
+    }));
+}
 app.use(express.json());
 
-// --- Helper for logging query plans ---
+// Lightweight timing middleware
+app.use((req, res, next) => {
+    req.requestStartTime = performance.now();
+    next();
+});
+
+// Helper function to add timing data to response
+function addTimingData(req, res, dbStartTime, dbEndTime) {
+    const requestEndTime = performance.now();
+    const totalBackendLatency = Math.round(requestEndTime - req.requestStartTime);
+    
+    if (DEBUG_MODE) {
+        // Full timing breakdown for development
+        const databaseLatency = Math.round(dbEndTime - dbStartTime);
+        const backendProcessingLatency = Math.round(totalBackendLatency - databaseLatency);
+        
+        res.set('X-Database-Latency', databaseLatency.toString());
+        res.set('X-Backend-Processing-Latency', backendProcessingLatency.toString());
+        
+        return { databaseLatency, backendProcessingLatency };
+    } else {
+        // Production: single total backend time
+        res.set('X-Total-Backend-Latency', totalBackendLatency.toString());
+        return { totalBackendLatency };
+    }
+}
+
+// --- Helper for logging query plans (Debug mode only) ---
 async function logQueryPlan(db, collectionName, query) {
+    if (!DEBUG_MODE) return;
+    
     try {
         const explain = await db.collection(collectionName).find(query).explain("executionStats");
         const executionStages = explain.executionStats?.executionStages;
@@ -27,6 +67,8 @@ async function logQueryPlan(db, collectionName, query) {
 }
 
 async function logAggregationPlan(db, collectionName, pipeline) {
+    if (!DEBUG_MODE) return;
+    
     try {
         // For aggregation pipelines, we'll analyze just the $match stage
         // since that's where index usage is most relevant
@@ -62,12 +104,19 @@ app.get('/api/communications/user/:id', async (req, res) => {
 
     const query = { "user.id": userId, day: startOfDay };
 
-    console.log("\n--- Backend Query Log (Req B & E) ---");
-    console.log(`db.collection('communications').findOne({ "user.id": ${userId}, day: ISODate("${startOfDay.toISOString()}") })`);
-    await logQueryPlan(db, 'communications', query);
+    if (DEBUG_MODE) {
+        console.log("\n--- Backend Query Log (Req B & E) ---");
+        console.log(`db.collection('communications').findOne({ "user.id": ${userId}, day: ISODate("${startOfDay.toISOString()}") })`);
+        await logQueryPlan(db, 'communications', query);
+    }
 
-    const bucket = await db.collection('communications').findOne(query);
+    const dbStartTime = performance.now();
+    const bucket = await db.collection('communications').findOne(query, 
+        DEBUG_MODE ? {} : { projection: { events: 1, _id: 0 } } // Production: only fetch needed fields
+    );
+    const dbEndTime = performance.now();
 
+    addTimingData(req, res, dbStartTime, dbEndTime);
     res.json(bucket ? bucket.events : []);
 });
 
@@ -107,12 +156,17 @@ app.post('/api/communications', async (req, res) => {
             expireAt: expireAt
         }
     };
-    console.log("\n--- Backend Query Log (Req A) ---");
-    console.log(`db.collection('communications').updateOne({ "user.id": ${userId}, day: ISODate("${startOfDay.toISOString()}") }, { ... }, { upsert: true })`);
-    await logQueryPlan(db, 'communications', filter);
+    if (DEBUG_MODE) {
+        console.log("\n--- Backend Query Log (Req A) ---");
+        console.log(`db.collection('communications').updateOne({ "user.id": ${userId}, day: ISODate("${startOfDay.toISOString()}") }, { ... }, { upsert: true })`);
+        await logQueryPlan(db, 'communications', filter);
+    }
 
+    const dbStartTime = performance.now();
     const result = await db.collection('communications').updateOne(filter, update, { upsert: true });
+    const dbEndTime = performance.now();
 
+    addTimingData(req, res, dbStartTime, dbEndTime);
     res.status(201).json({ message: `${count} event(s) appended.`});
 });
 
@@ -142,11 +196,17 @@ app.put('/api/communications/status', async (req, res) => {
             "elem.metadata.tracking_id": trackingId
         }]
     };
-    console.log("\n--- Backend Query Log (Req F) ---");
-    console.log(`db.collection('communications').updateOne({ "user.id": ${userId}, "events.dispatch_time": ISODate("${eventDispatchTime.toISOString()}"), ... }, { ... }, { ... })`);
-    await logQueryPlan(db, 'communications', filter);
+    if (DEBUG_MODE) {
+        console.log("\n--- Backend Query Log (Req F) ---");
+        console.log(`db.collection('communications').updateOne({ "user.id": ${userId}, "events.dispatch_time": ISODate("${eventDispatchTime.toISOString()}"), ... }, { ... }, { ... })`);
+        await logQueryPlan(db, 'communications', filter);
+    }
 
+    const dbStartTime = performance.now();
     const result = await db.collection('communications').updateOne(filter, update, options);
+    const dbEndTime = performance.now();
+
+    addTimingData(req, res, dbStartTime, dbEndTime);
 
     if (result.matchedCount === 0) {
         return res.status(404).send('Communication event not found.');
@@ -199,11 +259,17 @@ app.get('/api/campaigns/distinct-users', async (req, res) => {
         }
     ];
 
-    console.log("\n--- Backend Query Log (Req D) ---");
-    console.log(`db.collection('communications').aggregate(`, JSON.stringify(pipeline, null, 2), ")");
-    await logAggregationPlan(db, 'communications', [matchStage]);
+    if (DEBUG_MODE) {
+        console.log("\n--- Backend Query Log (Req D) ---");
+        console.log(`db.collection('communications').aggregate(`, JSON.stringify(pipeline, null, 2), ")");
+        await logAggregationPlan(db, 'communications', [matchStage]);
+    }
 
+    const dbStartTime = performance.now();
     const results = await db.collection('communications').aggregate(pipeline).toArray();
+    const dbEndTime = performance.now();
+
+    addTimingData(req, res, dbStartTime, dbEndTime);
 
     const data = results[0].data.map(doc => doc._id);
     const total = results[0].metadata[0] ? results[0].metadata[0].total : 0;
@@ -236,11 +302,17 @@ app.post('/api/communications/replace', async (req, res) => {
 
     const filter = { "user.id": userId, day: startOfDay };
     const update = { $set: { events: newEvents, event_count: newEvents.length } };
-    console.log("\n--- Backend Query Log (Req C) ---");
-    console.log(`db.collection('communications').updateOne({ "user.id": ${userId}, day: ISODate("${startOfDay.toISOString()}") }, { ... }, { upsert: true })`);
-    await logQueryPlan(db, 'communications', filter);
+    if (DEBUG_MODE) {
+        console.log("\n--- Backend Query Log (Req C) ---");
+        console.log(`db.collection('communications').updateOne({ "user.id": ${userId}, day: ISODate("${startOfDay.toISOString()}") }, { ... }, { upsert: true })`);
+        await logQueryPlan(db, 'communications', filter);
+    }
 
+    const dbStartTime = performance.now();
     const result = await db.collection('communications').updateOne(filter, update, { upsert: true });
+    const dbEndTime = performance.now();
+
+    addTimingData(req, res, dbStartTime, dbEndTime);
 
     res.status(200).json({
         message: "Communications replaced successfully.",
@@ -255,19 +327,31 @@ app.post('/api/communications/replace', async (req, res) => {
 // but it's needed for a realistic frontend.
 app.get('/api/templates', async (req, res) => {
     const db = await connectToDbForServer();
-    console.log("\n--- Backend Query Log (Get Templates) ---");
-    console.log("db.collection('communications').distinct('events.metadata.template_id')");
-    // Note: .explain() is not applicable to the distinct command itself, but we can see the supporting index being created in setup.js
+    if (DEBUG_MODE) {
+        console.log("\n--- Backend Query Log (Get Templates) ---");
+        console.log("db.collection('communications').distinct('events.metadata.template_id')");
+        // Note: .explain() is not applicable to the distinct command itself, but we can see the supporting index being created in setup.js
+    }
+    const dbStartTime = performance.now();
     const templates = await db.collection('communications').distinct('events.metadata.template_id');
+    const dbEndTime = performance.now();
+    
+    addTimingData(req, res, dbStartTime, dbEndTime);
     res.json(templates.sort());
 });
 
 app.get('/api/tracking-ids', async (req, res) => {
     const db = await connectToDbForServer();
-    console.log("\n--- Backend Query Log (Get Tracking IDs) ---");
-    console.log("db.collection('communications').distinct('events.metadata.tracking_id')");
-    // Note: .explain() is not applicable to the distinct command itself, but the supporting index is logged in setup.js
+    if (DEBUG_MODE) {
+        console.log("\n--- Backend Query Log (Get Tracking IDs) ---");
+        console.log("db.collection('communications').distinct('events.metadata.tracking_id')");
+        // Note: .explain() is not applicable to the distinct command itself, but the supporting index is logged in setup.js
+    }
+    const dbStartTime = performance.now();
     const trackingIds = await db.collection('communications').distinct('events.metadata.tracking_id');
+    const dbEndTime = performance.now();
+    
+    addTimingData(req, res, dbStartTime, dbEndTime);
     res.json(trackingIds.sort());
 });
 
@@ -276,7 +360,7 @@ app.get('/api/tracking-ids', async (req, res) => {
 async function startServer() {
     await connectToDbForServer();
     app.listen(port, () => {
-        console.log(`Server running on http://localhost:${port}`);
+        console.log(`Server running on http://localhost:${port}${DEBUG_MODE ? ' (DEBUG MODE)' : ' (PRODUCTION MODE)'}`);
     });
 }
 

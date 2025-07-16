@@ -4,8 +4,10 @@
   "description": "Backend server for the internal communications capping tool.",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "setup": "node server.js --setup",
+    "dev": "node server.js --debug",
+    "prod": "node server.js",
+    "setup": "node setup.js",
+    "stats": "node stats.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [

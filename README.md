@@ -6,7 +6,11 @@ This document provides a complete guide to setting up, running, and managing the
 
 This project consists of three main parts:
 * **Backend:** A Node.js server using the Express framework that provides a REST API to interact with the MongoDB database.
-* **Frontend:** A React application built with Vite that provides a user interface for internal teams to look up user communication history and analyze campaign data.
+* **Frontend:** A React application built with Vite that provides a user interface for internal teams to look up user communication history and analyze campaign data. Features include:
+    * Real-time API request timing display showing duration and type (READ/WRITE) for each operation
+    * User communication lookup and management
+    * Campaign analysis tools with pagination
+    * Communication status updates and bulk operations
 * **Database Scripts:** Standalone Node.js scripts for managing the database:
     * `setup.js`: Initializes the database schema and populates it with sample data.
     * `stats.js`: Calculates and displays detailed storage statistics for the database.
@@ -54,13 +58,27 @@ Follow these steps to get the project ready to run.
     ```
 
 3.  **Configure Environment Variables:**
-    Create a new file named `.env` in the `backend` directory. This file will store your database connection string securely.
-    * If you are running MongoDB locally, the content should be:
-        ```
-        MONGO_URI="mongodb://localhost:27017"
-        DB_NAME="comms_db"
-        ```
-    * If you are using MongoDB Atlas, replace the `MONGO_URI` value with your Atlas connection string.
+    Create a new file named `.env` in the `backend` directory by copying from the example template:
+    ```bash
+    cp .env.example .env
+    ```
+    
+    Then edit `.env` with your actual database configuration:
+    
+    **For Local MongoDB:**
+    ```
+    MONGO_URI="mongodb://localhost:27017"
+    DB_NAME="comms_db"
+    ```
+    
+    **For MongoDB Atlas (Cloud):**
+    Replace the `MONGO_URI` value with your Atlas connection string:
+    ```
+    MONGO_URI="mongodb+srv://your_username:your_password@your_cluster.mongodb.net/?retryWrites=true&w=majority&appName=your_app_name"
+    DB_NAME="comms_db"
+    ```
+    
+    **⚠️ Security Note:** Never commit your actual `.env` file to version control. The `.gitignore` file is configured to exclude it automatically.
 
 ### Step 4.2: Frontend Setup
 
@@ -86,7 +104,7 @@ This command will completely reset the database to a clean, seeded state.
 
 * In your **backend terminal**, run the following command:
     ```bash
-    node setup.js
+    npm run setup
     ```
 * Wait for the script to complete. You can run this command as many times as you need.
 
@@ -96,7 +114,7 @@ After the setup script has finished, you can run this command to see a detailed 
 
 * In your **backend terminal**, run:
     ```bash
-    node stats.js
+    npm run stats
     ```
 
 ## 6. Running the Application
@@ -105,26 +123,51 @@ To run the application, you need to have both the backend and frontend servers r
 
 ### Step 6.1: Start the Backend Server
 
-1.  In your **backend terminal** (`communications-dashboard/backend`), run:
-    ```bash
-    node server.js
-    ```
-2.  You should see the confirmation message: `Server running on http://localhost:5001`.
-3.  **Leave this terminal running.**
+**Production Mode (Optimized Performance):**
+```bash
+npm run prod
+```
+- Minimal logging for optimal performance
+- Runs on: `http://localhost:5001`
+- Shows: `Server running on http://localhost:5001 (PRODUCTION MODE)`
+
+**Development Mode (Full Debug Information):**
+```bash
+npm run dev
+```
+- Complete query logging and analysis
+- Database explain() output for optimization
+- Runs on: `http://localhost:5002`
+- Shows: `Server running on http://localhost:5002 (DEV MODE)`
 
 ### Step 6.2: Start the Frontend Server
 
-1.  In your **frontend terminal** (`communications-dashboard/frontend`), run:
-    ```bash
-    npm run dev
-    ```
-2.  The terminal will display a local URL for the frontend, typically `http://localhost:5173`.
-3.  **Leave this second terminal running.**
+**Development Mode (Full Timing Breakdown):**
+```bash
+npm run dev
+```
+- Shows detailed timing breakdown: Database + Backend + Frontend
+- Full error logging and debug information
+- Shows "DEV MODE" indicator in header
+- Connects to backend on port 5002
+- Frontend URL: `http://localhost:5173`
+
+**Production Mode (Optimized Performance):**
+```bash
+npm run prod
+```
+- Shows end-to-end total latency only
+- Minimal logging for better performance
+- Clean interface without dev indicators
+- Connects to backend on port 5001
+- Frontend URL: `http://localhost:5174`
 
 ### Step 6.3: View the Application
 
 1.  Open your web browser.
-2.  Navigate to the frontend URL (e.g., **http://localhost:5173**).
+2.  Navigate to the appropriate frontend URL:
+    - **Development Mode**: http://localhost:5173
+    - **Production Mode**: http://localhost:5174
 
 You should now see the "Dumbledore - SmartComms" running in your browser.
 
@@ -134,19 +177,30 @@ You should now see the "Dumbledore - SmartComms" running in your browser.
 **To reset the database:**
 ```bash
 # In ./backend terminal
-node setup.js
+npm run setup
 ```
 
 **To view database stats:**
 ```bash
 # In ./backend terminal
-node stats.js
+npm run stats
 ```
 
 **To run the app:**
+
+**Production Mode (Optimized):**
 ```bash
 # In ./backend terminal
-node server.js
+npm run prod
+
+# In ./frontend terminal  
+npm run prod
+```
+
+**Development Mode (Full Debug):**
+```bash
+# In ./backend terminal
+npm run dev
 
 # In ./frontend terminal
 npm run dev

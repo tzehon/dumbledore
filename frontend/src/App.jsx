@@ -1,7 +1,8 @@
 // File: frontend/src/App.jsx
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 
-const API_BASE_URL = 'http://localhost:5001/api';
+const IS_PRODUCTION = import.meta.env.MODE === 'production';
+const API_BASE_URL = IS_PRODUCTION ? 'http://localhost:5001/api' : 'http://localhost:5002/api';
 
 // --- Main App Component ---
 export default function App() {
@@ -31,6 +32,51 @@ export default function App() {
 
   // Helper function to track API request timing
   const trackApiCall = (requestKey, type, description, clearPrevious = false) => {
+    // In production mode, optimized end-to-end timing tracking
+    if (IS_PRODUCTION) {
+      const startTime = performance.now();
+      
+      const finishTracking = (success = true, response = null) => {
+        const endTime = performance.now();
+        const frontendLatency = Math.round(endTime - startTime);
+        
+        // Get backend timing from optimized header
+        let totalLatency = frontendLatency;
+        let backendLatency = 0;
+        
+        if (response && response.headers) {
+          const totalBackendLatency = response.headers.get('X-Total-Backend-Latency');
+          if (totalBackendLatency) {
+            backendLatency = parseInt(totalBackendLatency);
+            totalLatency = frontendLatency + backendLatency;
+          }
+        }
+        
+        if (clearPrevious) {
+          setRequestTimings({});
+        }
+        
+        setRequestTimings(prev => ({
+          ...prev,
+          [requestKey]: {
+            totalLatency,
+            databaseLatency: null,
+            backendProcessingLatency: null,
+            frontendProcessingLatency: null,
+            type,
+            description,
+            timestamp: new Date().toISOString(),
+            success
+          }
+        }));
+        
+        return totalLatency;
+      };
+      
+      return { finishTracking };
+    }
+    
+    // Development mode - full timing tracking
     // Only clear previous timings if explicitly requested (for user-initiated actions)
     if (clearPrevious) {
       setRequestTimings({});
@@ -38,14 +84,34 @@ export default function App() {
     
     const startTime = performance.now();
     
-    const finishTracking = (success = true) => {
+    const finishTracking = (success = true, response = null) => {
       const endTime = performance.now();
-      const duration = Math.round(endTime - startTime);
+      const frontendProcessingLatency = Math.round(endTime - startTime);
+      
+      // Extract timing data from response headers if available
+      let databaseLatency = null;
+      let backendProcessingLatency = null;
+      let totalLatency = frontendProcessingLatency;
+      
+      if (response && response.headers) {
+        const dbLatency = response.headers.get('X-Database-Latency');
+        const backendLatency = response.headers.get('X-Backend-Processing-Latency');
+        
+        if (dbLatency) databaseLatency = parseInt(dbLatency);
+        if (backendLatency) backendProcessingLatency = parseInt(backendLatency);
+        
+        if (databaseLatency !== null && backendProcessingLatency !== null) {
+          totalLatency = frontendProcessingLatency + databaseLatency + backendProcessingLatency;
+        }
+      }
       
       setRequestTimings(prev => ({
         ...prev,
         [requestKey]: {
-          duration,
+          totalLatency,
+          databaseLatency,
+          backendProcessingLatency,
+          frontendProcessingLatency,
           type, // 'read' or 'write'
           description,
           timestamp: new Date().toISOString(),
@@ -53,7 +119,7 @@ export default function App() {
         }
       }));
       
-      return duration;
+      return totalLatency;
     };
     
     return { finishTracking };
@@ -72,21 +138,25 @@ export default function App() {
     const startOfDay = new Date(date);
     startOfDay.setUTCHours(0,0,0,0);
     const query = { "user.id": parseInt(userId), day: startOfDay };
-    console.log("--- Frontend Query Log (Req B & E) ---");
-    console.log("db.collection('communications').findOne(", JSON.stringify(query, null, 2), ")");
+    if (!IS_PRODUCTION) {
+      console.log("--- Frontend Query Log (Req B & E) ---");
+      console.log("db.collection('communications').findOne(", JSON.stringify(query, null, 2), ")");
+    }
 
     fetch(`${API_BASE_URL}/communications/user/${userId}?date=${date}`)
       .then(res => {
         if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-        return res.json();
+        return res.json().then(data => ({ data, response: res }));
       })
-      .then(data => {
+      .then(({ data, response }) => {
         setCommunications(data);
-        const duration = finishTracking(true);
+        const duration = finishTracking(true, response);
         setQueryDuration(duration);
       })
       .catch(error => {
-        console.error("Fetch communications error:", error);
+        if (!IS_PRODUCTION) {
+          console.error("Fetch communications error:", error);
+        }
         setError("Failed to fetch communications. Please check the server connection or user ID.");
         finishTracking(false);
       })
@@ -111,9 +181,9 @@ export default function App() {
     const { finishTracking: finishTrackingIdsTracking } = trackApiCall(trackingIdsKey, 'read', 'Fetch tracking IDs');
     
     const fetchTemplates = fetch(`${API_BASE_URL}/templates`)
-      .then(res => res.json())
-      .then(data => {
-        finishTemplatesTracking(true);
+      .then(res => res.json().then(data => ({ data, response: res })))
+      .then(({ data, response }) => {
+        finishTemplatesTracking(true, response);
         return data;
       })
       .catch(err => {
@@ -122,9 +192,9 @@ export default function App() {
       });
     
     const fetchTrackingIds = fetch(`${API_BASE_URL}/tracking-ids`)
-      .then(res => res.json())
-      .then(data => {
-        finishTrackingIdsTracking(true);
+      .then(res => res.json().then(data => ({ data, response: res })))
+      .then(({ data, response }) => {
+        finishTrackingIdsTracking(true, response);
         return data;
       })
       .catch(err => {
@@ -138,7 +208,9 @@ export default function App() {
             setTrackingIds(trackingIdData);
         })
         .catch(err => {
-            console.error("Fetch dropdowns error:", err);
+            if (!IS_PRODUCTION) {
+              console.error("Fetch dropdowns error:", err);
+            }
             setError("Failed to load campaign data.");
         })
         .finally(() => {
@@ -188,14 +260,16 @@ export default function App() {
     })
     .then(res => {
         if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-        return res.json();
+        return res.json().then(data => ({ data, response: res }));
     })
-    .then(() => {
-        finishTracking(true);
+    .then(({ data, response }) => {
+        finishTracking(true, response);
         fetchCommunications(searchedUserId, selectedDate, false); // Refresh data without clearing timings
     })
     .catch(err => {
-        console.error("Update status error:", err);
+        if (!IS_PRODUCTION) {
+          console.error("Update status error:", err);
+        }
         setError("Failed to update status. Please try again.");
         finishTracking(false);
     });
@@ -221,10 +295,10 @@ export default function App() {
             const errData = await res.json();
             throw new Error(errData.message || `HTTP error! status: ${res.status}`);
         }
-        return res.json();
+        return res.json().then(data => ({ data, response: res }));
     })
-    .then(() => {
-        finishTracking(true);
+    .then(({ data, response }) => {
+        finishTracking(true, response);
         const today = new Date().toISOString().split('T')[0];
         if (selectedDate === today) {
             fetchCommunications(searchedUserId, selectedDate, false); // Refresh data without clearing timings
@@ -233,7 +307,9 @@ export default function App() {
         }
     })
     .catch(err => {
-        console.error("Send new comm error:", err);
+        if (!IS_PRODUCTION) {
+          console.error("Send new comm error:", err);
+        }
         setError(err.message);
         finishTracking(false);
     });
@@ -273,15 +349,17 @@ export default function App() {
     })
     .then(res => {
         if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-        return res.json();
+        return res.json().then(data => ({ data, response: res }));
     })
-    .then(() => {
-        finishTracking(true);
+    .then(({ data, response }) => {
+        finishTracking(true, response);
         alert(`Communications for ${selectedDate} have been replaced.`);
         fetchCommunications(searchedUserId, selectedDate, false); // Refresh data without clearing timings
     })
     .catch(err => {
-        console.error("Replace comms error:", err);
+        if (!IS_PRODUCTION) {
+          console.error("Replace comms error:", err);
+        }
         setError("Failed to replace communications. Please try again.");
         finishTracking(false);
     });
@@ -350,6 +428,7 @@ function Header({ setView, currentView }) {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
         <div className="flex items-center space-x-3">
           <h1 className="text-2xl font-bold text-gray-800">🧙 Dumbledore - SmartComms</h1>
+          {!IS_PRODUCTION && <span className="ml-4 text-sm bg-yellow-200 text-yellow-800 px-2 py-1 rounded">DEV MODE</span>}
         </div>
         <nav className="flex space-x-2 bg-gray-200 p-1 rounded-lg">
           <button onClick={() => setView('dashboard')} className={`px-4 py-1.5 text-sm font-medium rounded-md ${currentView === 'dashboard' ? 'bg-white text-gray-700 shadow' : 'text-gray-600 hover:bg-gray-300'}`}>User Lookup</button>
@@ -488,6 +567,49 @@ function CampaignView({ templates, trackingIds, isLoadingDropdowns, requestTimin
 
     // Helper function to track API request timing for campaign
     const trackCampaignApiCall = (requestKey, type, description, clearPrevious = true) => {
+        // In production mode, optimized end-to-end timing tracking
+        if (IS_PRODUCTION) {
+            const startTime = performance.now();
+            
+            const finishTracking = (success = true, response = null) => {
+                const endTime = performance.now();
+                const frontendLatency = Math.round(endTime - startTime);
+                
+                // Get backend timing from optimized header
+                let totalLatency = frontendLatency;
+                
+                if (response && response.headers) {
+                    const totalBackendLatency = response.headers.get('X-Total-Backend-Latency');
+                    if (totalBackendLatency) {
+                        totalLatency = frontendLatency + parseInt(totalBackendLatency);
+                    }
+                }
+                
+                if (clearPrevious) {
+                    setCampaignTimings({});
+                }
+                
+                setCampaignTimings(prev => ({
+                    ...prev,
+                    [requestKey]: {
+                        totalLatency,
+                        databaseLatency: null,
+                        backendProcessingLatency: null,
+                        frontendProcessingLatency: null,
+                        type,
+                        description,
+                        timestamp: new Date().toISOString(),
+                        success
+                    }
+                }));
+                
+                return totalLatency;
+            };
+            
+            return { finishTracking };
+        }
+        
+        // Development mode - full timing tracking
         // Clear all previous campaign timings when starting a new user action
         if (clearPrevious) {
             setCampaignTimings({});
@@ -495,14 +617,34 @@ function CampaignView({ templates, trackingIds, isLoadingDropdowns, requestTimin
         
         const startTime = performance.now();
         
-        const finishTracking = (success = true) => {
+        const finishTracking = (success = true, response = null) => {
             const endTime = performance.now();
-            const duration = Math.round(endTime - startTime);
+            const frontendProcessingLatency = Math.round(endTime - startTime);
+            
+            // Extract timing data from response headers if available
+            let databaseLatency = null;
+            let backendProcessingLatency = null;
+            let totalLatency = frontendProcessingLatency;
+            
+            if (response && response.headers) {
+                const dbLatency = response.headers.get('X-Database-Latency');
+                const backendLatency = response.headers.get('X-Backend-Processing-Latency');
+                
+                if (dbLatency) databaseLatency = parseInt(dbLatency);
+                if (backendLatency) backendProcessingLatency = parseInt(backendLatency);
+                
+                if (databaseLatency !== null && backendProcessingLatency !== null) {
+                    totalLatency = frontendProcessingLatency + databaseLatency + backendProcessingLatency;
+                }
+            }
             
             setCampaignTimings(prev => ({
                 ...prev,
                 [requestKey]: {
-                    duration,
+                    totalLatency,
+                    databaseLatency,
+                    backendProcessingLatency,
+                    frontendProcessingLatency,
                     type, // 'read' or 'write'
                     description,
                     timestamp: new Date().toISOString(),
@@ -510,7 +652,7 @@ function CampaignView({ templates, trackingIds, isLoadingDropdowns, requestTimin
                 }
             }));
             
-            return duration;
+            return totalLatency;
         };
         
         return { finishTracking };
@@ -541,18 +683,20 @@ function CampaignView({ templates, trackingIds, isLoadingDropdowns, requestTimin
         fetch(`${API_BASE_URL}/campaigns/distinct-users?${queryString}`)
             .then(res => {
                 if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-                return res.json();
+                return res.json().then(data => ({ data, response: res }));
             })
-            .then(data => {
+            .then(({ data, response }) => {
                 setDistinctUsers(data.data);
                 setTotalUsers(data.total);
                 setTotalPages(data.totalPages);
                 setPage(data.page);
-                const duration = finishTracking(true);
+                const duration = finishTracking(true, response);
                 setCampaignQueryDuration(duration);
             })
             .catch(err => {
-                console.error("Campaign search error:", err);
+                if (!IS_PRODUCTION) {
+                  console.error("Campaign search error:", err);
+                }
                 setError("Failed to search for campaign users.");
                 setDistinctUsers([]);
                 setTotalUsers(0);
@@ -658,7 +802,14 @@ function RequestTimingsDisplay({ requestTimings }) {
                             <p className="text-xs text-gray-500">{new Date(timing.timestamp).toLocaleTimeString()}</p>
                         </div>
                         <div className="text-right">
-                            <p className="font-semibold text-gray-800">{timing.duration}ms</p>
+                            <p className="font-semibold text-gray-800">{timing.totalLatency}ms</p>
+                            {!IS_PRODUCTION && timing.databaseLatency !== null && timing.backendProcessingLatency !== null && (
+                                <div className="text-xs text-gray-500 mt-1">
+                                    <div>DB: {timing.databaseLatency}ms</div>
+                                    <div>Backend: {timing.backendProcessingLatency}ms</div>
+                                    <div>Frontend: {timing.frontendProcessingLatency}ms</div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 ))}
