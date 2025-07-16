@@ -1,5 +1,5 @@
 // File: frontend/src/App.jsx
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 
 const API_BASE_URL = 'http://localhost:5001/api';
 
@@ -11,15 +11,21 @@ export default function App() {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [error, setError] = useState(null);
   const [lookupUserId, setLookupUserId] = useState('1001'); // The value in the input box
-  const [searchedUserId, setSearchedUserId] = useState('1001'); // The ID that has been searched for
-  const [queryDuration, setQueryDuration] = useState(null); // New state for query duration
+  const [searchedUserId, setSearchedUserId] = useState(''); // The ID that has been searched for
+  const [queryDuration, setQueryDuration] = useState(null);
+
+  const [templates, setTemplates] = useState([]);
+  const [trackingIds, setTrackingIds] = useState([]);
+  const [isLoadingDropdowns, setIsLoadingDropdowns] = useState(true);
+
+  const initialLoadDone = useRef(false);
 
   // Fetch communications when a searched user or date changes
   const fetchCommunications = useCallback((userId, date) => {
     if (!userId) return;
     setIsLoadingComms(true);
     setError(null);
-    setQueryDuration(null); // Reset duration
+    setQueryDuration(null);
 
     const startTime = performance.now();
 
@@ -49,6 +55,34 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (initialLoadDone.current) {
+        return;
+    }
+    initialLoadDone.current = true;
+
+    setSearchedUserId('1001');
+
+    setIsLoadingDropdowns(true);
+    const fetchTemplates = fetch(`${API_BASE_URL}/templates`).then(res => res.json());
+    const fetchTrackingIds = fetch(`${API_BASE_URL}/tracking-ids`).then(res => res.json());
+
+    Promise.all([fetchTemplates, fetchTrackingIds])
+        .then(([templateData, trackingIdData]) => {
+            setTemplates(templateData);
+            setTrackingIds(trackingIdData);
+        })
+        .catch(err => {
+            console.error("Fetch dropdowns error:", err);
+            setError("Failed to load campaign data.");
+        })
+        .finally(() => {
+            setIsLoadingDropdowns(false);
+        });
+  }, []);
+
+  useEffect(() => {
+    if (!initialLoadDone.current) return;
+
     if (searchedUserId) {
         fetchCommunications(searchedUserId, selectedDate);
     }
@@ -60,15 +94,10 @@ export default function App() {
     setSelectedDate(newDate);
   }
 
-  // --- FIX: The search handler now correctly handles all clicks ---
   const handleSearch = () => {
-    // If the ID is the same, the state update won't trigger useEffect,
-    // so we must call the fetch function manually.
     if (lookupUserId === searchedUserId) {
         fetchCommunications(lookupUserId, selectedDate);
     } else {
-    // If the ID is different, setting the state will trigger the useEffect,
-    // which will call the fetch function.
         setSearchedUserId(lookupUserId);
     }
   }
@@ -195,7 +224,11 @@ export default function App() {
             queryDuration={queryDuration}
           />
         ) : (
-          <CampaignView />
+          <CampaignView
+            templates={templates}
+            trackingIds={trackingIds}
+            isLoadingDropdowns={isLoadingDropdowns}
+          />
         )}
       </main>
     </div>
@@ -349,94 +382,71 @@ function CommunicationsLog({ communications, isLoading, onUpdateStatus, onReplac
   );
 }
 
-function CampaignView() {
+function CampaignView({ templates, trackingIds, isLoadingDropdowns }) {
     const [params, setParams] = useState({
         date: new Date().toISOString().split('T')[0],
         hour: new Date().getHours(),
         templateId: '',
         trackingId: ''
     });
-    const [templates, setTemplates] = useState([]);
-    const [trackingIds, setTrackingIds] = useState([]);
-    const [distinctUsers, setDistinctUsers] = useState(null);
+    const [distinctUsers, setDistinctUsers] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
-    const [isLoadingDropdowns, setIsLoadingDropdowns] = useState(true);
     const [campaignQueryDuration, setCampaignQueryDuration] = useState(null);
+    // --- CHANGE: New state for pagination ---
+    const [page, setPage] = useState(1);
+    const [totalPages, setTotalPages] = useState(0);
+    const [totalUsers, setTotalUsers] = useState(0);
 
+    // Set initial params once dropdown data is available
     useEffect(() => {
-        setError(null);
-        setIsLoadingDropdowns(true);
+        if (!isLoadingDropdowns) {
+            setParams(p => ({
+                ...p,
+                templateId: templates[0] || '',
+                trackingId: trackingIds[0] || ''
+            }));
+        }
+    }, [isLoadingDropdowns, templates, trackingIds]);
 
-        const fetchTemplates = fetch(`${API_BASE_URL}/templates`).then(res => res.json());
-        const fetchTrackingIds = fetch(`${API_BASE_URL}/tracking-ids`).then(res => res.json());
-
-        Promise.all([fetchTemplates, fetchTrackingIds])
-            .then(([templateData, trackingIdData]) => {
-                setTemplates(templateData);
-                if (templateData.length > 0) {
-                    setParams(p => ({...p, templateId: templateData[0]}));
-                }
-                setTrackingIds(trackingIdData);
-                if (trackingIdData.length > 0) {
-                    setParams(p => ({...p, trackingId: trackingIdData[0]}));
-                }
-            })
-            .catch(err => {
-                console.error("Fetch dropdowns error:", err);
-                setError("Failed to load campaign data.");
-            })
-            .finally(() => {
-                setIsLoadingDropdowns(false);
-            });
-    }, []);
-
-    const handleSearch = (e) => {
-        e.preventDefault();
+    const handleSearch = useCallback((newPage = 1) => {
         setIsLoading(true);
-        setDistinctUsers(null);
-        setError(null);
         setCampaignQueryDuration(null);
+        setError(null);
 
         const startTime = performance.now();
 
-        const startOfDay = new Date(params.date);
-        startOfDay.setUTCHours(0, 0, 0, 0);
-        const startOfHour = new Date(params.date);
-        startOfHour.setUTCHours(parseInt(params.hour), 0, 0, 0);
-        const endOfHour = new Date(startOfHour.getTime() + 60 * 60 * 1000);
+        const query = { ...params, page: newPage };
+        const queryString = new URLSearchParams(query).toString();
 
-        const query = {
-            day: startOfDay,
-            events: {
-                $elemMatch: {
-                    "dispatch_time": { $gte: startOfHour, $lt: endOfHour },
-                    "metadata.template_id": params.templateId,
-                    "metadata.tracking_id": params.trackingId
-                }
-            }
-        };
-        console.log("--- Frontend Query Log (Req D) ---");
-        console.log("db.collection('communications').distinct('user.id',", JSON.stringify(query, null, 2), ")");
-
-        const queryString = new URLSearchParams(params).toString();
         fetch(`${API_BASE_URL}/campaigns/distinct-users?${queryString}`)
             .then(res => {
                 if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
                 return res.json();
             })
             .then(data => {
-                setDistinctUsers(data);
+                setDistinctUsers(data.data);
+                setTotalUsers(data.total);
+                setTotalPages(data.totalPages);
+                setPage(data.page);
             })
             .catch(err => {
                 console.error("Campaign search error:", err);
                 setError("Failed to search for campaign users.");
+                setDistinctUsers([]);
+                setTotalUsers(0);
             })
             .finally(() => {
                 const endTime = performance.now();
                 setCampaignQueryDuration(Math.round(endTime - startTime));
                 setIsLoading(false);
             });
+    }, [params]);
+
+    const handleFormSubmit = (e) => {
+        e.preventDefault();
+        setPage(1); // Reset to first page on new search
+        handleSearch(1);
     }
 
     const handleChange = (e) => {
@@ -447,7 +457,7 @@ function CampaignView() {
         <div className="bg-white p-6 rounded-lg shadow">
             <h2 className="text-xl font-bold text-gray-800 mb-4">Find Distinct Users for Campaign (Req D)</h2>
             {error && <ErrorMessage message={error} />}
-            <form onSubmit={handleSearch} className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end mb-6">
+            <form onSubmit={handleFormSubmit} className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end mb-6">
                 <div>
                     <label className="block text-sm font-medium text-gray-600">Date</label>
                     <input type="date" name="date" value={params.date} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"/>
@@ -472,12 +482,19 @@ function CampaignView() {
             </form>
             <div>
                 {isLoading && <p>Loading results...</p>}
-                {distinctUsers && (
+                {totalUsers > 0 && (
                     <div>
-                        <h3 className="font-semibold text-lg">
-                            Found {distinctUsers.length} unique users (Read)
-                            {campaignQueryDuration !== null && <span className="text-sm text-gray-500 ml-2">(Query took: {campaignQueryDuration}ms)</span>}
-                        </h3>
+                        <div className="flex justify-between items-center">
+                            <h3 className="font-semibold text-lg">
+                                Found {totalUsers.toLocaleString()} unique users (Read)
+                                {campaignQueryDuration !== null && <span className="text-sm text-gray-500 ml-2">(Query took: {campaignQueryDuration}ms)</span>}
+                            </h3>
+                            <div className="flex items-center gap-2">
+                                <button onClick={() => handleSearch(page - 1)} disabled={page <= 1} className="px-3 py-1 bg-gray-200 rounded-md disabled:opacity-50">Previous</button>
+                                <span>Page {page} of {totalPages}</span>
+                                <button onClick={() => handleSearch(page + 1)} disabled={page >= totalPages} className="px-3 py-1 bg-gray-200 rounded-md disabled:opacity-50">Next</button>
+                            </div>
+                        </div>
                         <div className="mt-2 bg-gray-100 p-4 rounded-md max-h-60 overflow-y-auto">
                             {distinctUsers.length > 0 ? distinctUsers.join(', ') : 'No users found for this criteria.'}
                         </div>

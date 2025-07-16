@@ -23,6 +23,24 @@ async function logQueryPlan(db, collectionName, query) {
     }
 }
 
+async function logAggregationPlan(db, collectionName, pipeline) {
+     try {
+        const explain = await db.collection(collectionName).aggregate(pipeline).explain("executionStats");
+        const winningPlan = explain.stages[0]?.$cursor?.queryPlanner?.winningPlan || explain.stages[0]?.winningPlan;
+        if (winningPlan?.stage === 'COLLSCAN') {
+            console.log(` -> Query Plan: Collection Scan (COLLSCAN) - Consider adding an index to support the aggregation.`);
+        } else if (winningPlan?.stage === 'DISTINCT_SCAN') {
+            console.log(` -> Query Plan: Used index for distinct scan on '${winningPlan.keyPattern ? Object.keys(winningPlan.keyPattern) : 'unknown'}'`);
+        }
+         else {
+            console.log(` -> Query Plan: Stage is '${winningPlan?.stage}'`);
+        }
+    } catch (e) {
+        console.error(" -> Explain for aggregation failed:", e.message);
+    }
+}
+
+
 // --- API Endpoints ---
 
 // GET /api/communications/user/:id?date=YYYY-MM-DD
@@ -138,7 +156,8 @@ app.put('/api/communications/status', async (req, res) => {
 // Requirement (D): Get Distinct Users for Campaign by Hour
 app.get('/api/campaigns/distinct-users', async (req, res) => {
     const db = await connectToDbForServer();
-    const { date, hour, templateId, trackingId } = req.query;
+    const { date, hour, templateId, trackingId, page = 1 } = req.query;
+    const PAGE_SIZE = 50;
 
     if (!date || !hour || !templateId || !trackingId) {
         return res.status(400).send('Missing required query parameters.');
@@ -152,23 +171,46 @@ app.get('/api/campaigns/distinct-users', async (req, res) => {
 
     const endOfHour = new Date(startOfHour.getTime() + 60 * 60 * 1000);
 
-    const query = {
-        day: startOfDay,
-        events: {
-            $elemMatch: {
-                "dispatch_time": { $gte: startOfHour, $lt: endOfHour },
-                "metadata.template_id": templateId,
-                "metadata.tracking_id": trackingId
+    const matchStage = {
+        $match: {
+            day: startOfDay,
+            events: {
+                $elemMatch: {
+                    "dispatch_time": { $gte: startOfHour, $lt: endOfHour },
+                    "metadata.template_id": templateId,
+                    "metadata.tracking_id": trackingId
+                }
             }
         }
     };
+
+    const pipeline = [
+        matchStage,
+        { $group: { _id: "$user.id" } },
+        { $sort: { _id: 1 } },
+        {
+            $facet: {
+                metadata: [{ $count: "total" }],
+                data: [{ $skip: (page - 1) * PAGE_SIZE }, { $limit: PAGE_SIZE }]
+            }
+        }
+    ];
+
     console.log("\n--- Backend Query Log (Req D) ---");
-    console.log(`db.collection('communications').distinct("user.id", { day: ISODate("${startOfDay.toISOString()}"), events: { $elemMatch: { "dispatch_time": { $gte: ISODate("${startOfHour.toISOString()}"), $lt: ISODate("${endOfHour.toISOString()}") }, "metadata.template_id": "${templateId}", "metadata.tracking_id": "${trackingId}" } } })`);
-    await logQueryPlan(db, 'communications', query);
+    console.log(`db.collection('communications').aggregate(`, JSON.stringify(pipeline, null, 2), ")");
+    await logAggregationPlan(db, 'communications', [matchStage]);
 
-    const distinctUsers = await db.collection('communications').distinct("user.id", query);
+    const results = await db.collection('communications').aggregate(pipeline).toArray();
 
-    res.json(distinctUsers);
+    const data = results[0].data.map(doc => doc._id);
+    const total = results[0].metadata[0] ? results[0].metadata[0].total : 0;
+
+    res.json({
+        data,
+        total,
+        page: parseInt(page),
+        totalPages: Math.ceil(total / PAGE_SIZE)
+    });
 });
 
 // POST /api/communications/replace
@@ -212,7 +254,6 @@ app.get('/api/templates', async (req, res) => {
     const db = await connectToDbForServer();
     console.log("\n--- Backend Query Log (Get Templates) ---");
     console.log("db.collection('communications').distinct('events.metadata.template_id')");
-    // Note: .explain() is not applicable to the distinct command itself, but the supporting index is logged in setup.js
     const templates = await db.collection('communications').distinct('events.metadata.template_id');
     res.json(templates.sort());
 });
@@ -221,10 +262,10 @@ app.get('/api/tracking-ids', async (req, res) => {
     const db = await connectToDbForServer();
     console.log("\n--- Backend Query Log (Get Tracking IDs) ---");
     console.log("db.collection('communications').distinct('events.metadata.tracking_id')");
-    // Note: .explain() is not applicable to the distinct command itself, but the supporting index is logged in setup.js
     const trackingIds = await db.collection('communications').distinct('events.metadata.tracking_id');
     res.json(trackingIds.sort());
 });
+
 
 // --- Server Initialization ---
 async function startServer() {
