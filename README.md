@@ -98,15 +98,22 @@ Follow these steps to get the project ready to run.
 
 The `backend` directory contains two scripts for managing your development database.
 
-### To Set Up and Seed the Database (Setup & Teardown)
+### To Set Up and Seed the Database
 
-This command will completely reset the database to a clean, seeded state.
-
-* In your **backend terminal**, run the following command:
+**Reset Mode (Default)** - Completely reset the database to a clean, seeded state:
+* In your **backend terminal**, run:
     ```bash
-    npm run setup
+    npm run setup        # Default: reset mode
+    npm run setup:reset  # Explicit reset mode
     ```
-* Wait for the script to complete. You can run this command as many times as you need.
+
+**Append Mode** - Add more users to existing data without dropping the collection:
+* In your **backend terminal**, run:
+    ```bash
+    npm run setup:append
+    ```
+* This will find the highest existing user ID and continue from there
+* Useful for gradually increasing your dataset size for testing
 
 ### To View Database Statistics
 
@@ -177,7 +184,14 @@ You should now see the "Dumbledore - SmartComms" running in your browser.
 **To reset the database:**
 ```bash
 # In ./backend terminal
-npm run setup
+npm run setup        # Default: reset (same as setup:reset)
+npm run setup:reset  # Drop collection and reseed from scratch
+```
+
+**To append more data:**
+```bash
+# In ./backend terminal
+npm run setup:append # Add more users to existing data
 ```
 
 **To view database stats:**

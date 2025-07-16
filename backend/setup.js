@@ -1,4 +1,7 @@
 // This is a standalone script to set up and seed the database.
+// Usage: 
+//   node setup.js --reset    (default: drop collection and reseed)
+//   node setup.js --append   (append new data to existing collection)
 
 const { MongoClient, ObjectId } = require('mongodb');
 const { faker } = require('@faker-js/faker');
@@ -7,6 +10,16 @@ require('dotenv').config();
 
 const MONGO_URI_SETUP = process.env.MONGO_URI;
 const DB_NAME_SETUP = process.env.DB_NAME;
+
+// Parse command line arguments
+const args = process.argv.slice(2);
+const isAppendMode = args.includes('--append');
+const isResetMode = args.includes('--reset') || args.length === 0; // Default to reset if no args
+
+if (isAppendMode && isResetMode) {
+    console.error('Error: Cannot use both --append and --reset flags');
+    process.exit(1);
+}
 
 // --- Production scale numbers from PDF added for reference ---
 const NUM_USERS_PRODUCTION = 50000000;
@@ -28,23 +41,28 @@ async function setupAndSeedDatabase() {
         await setupClient.connect();
         const db = setupClient.db(DB_NAME_SETUP);
         console.log("Connected to MongoDB for setup...");
-
-        // 1. Setup Database Schema
-        console.log("Setting up database collection and indexes...");
-        try {
-            await db.collection('communications').drop();
-            console.log("Dropped existing communications collection.");
-        } catch (e) {
-            if (e.codeName !== 'NamespaceNotFound') {
-                console.warn("Could not drop collection (it may not exist):", e.message);
-            }
-        }
+        console.log(`Mode: ${isAppendMode ? 'APPEND' : 'RESET'}`);
 
         const communicationsCollection = db.collection('communications');
 
-        // Create indexes for the new model
+        // 1. Setup Database Schema
+        if (isResetMode) {
+            console.log("Setting up database collection and indexes...");
+            try {
+                await db.collection('communications').drop();
+                console.log("Dropped existing communications collection.");
+            } catch (e) {
+                if (e.codeName !== 'NamespaceNotFound') {
+                    console.warn("Could not drop collection (it may not exist):", e.message);
+                }
+            }
+        } else {
+            console.log("Append mode: Keeping existing collection and data...");
+        }
+
+        // Create indexes (safe to run multiple times)
         await communicationsCollection.createIndex({ "user.id": 1, day: 1 });
-        console.log("-> Created primary compound index for user/day lookups.");
+        console.log("-> Created/ensured primary compound index for user/day lookups.");
 
         await communicationsCollection.createIndex({
             "day": 1,
@@ -74,12 +92,26 @@ async function setupAndSeedDatabase() {
         // 2. Generate Data
         console.log(`\nGenerating data for ${NUM_USERS_TO_GENERATE.toLocaleString('en-US')} users...`);
 
+        // Determine starting user ID
+        let startingUserId = 1000;
+        if (isAppendMode) {
+            // Find the highest existing user ID
+            const maxUserDoc = await communicationsCollection.findOne(
+                {},
+                { sort: { "user.id": -1 }, projection: { "user.id": 1 } }
+            );
+            if (maxUserDoc) {
+                startingUserId = maxUserDoc.user.id + 1;
+                console.log(`Append mode: Starting from user ID ${startingUserId}`);
+            }
+        }
+
         const startTime = performance.now();
 
         // --- CHANGE: Use iterative batch insert for performance ---
         let bucketBatch = [];
         for (let i = 0; i < NUM_USERS_TO_GENERATE; i++) {
-            const userId = 1000 + i;
+            const userId = startingUserId + i;
             const userType = faker.helpers.arrayElement(USER_TYPES);
 
             for (let day = 0; day < DAYS_OF_DATA_TO_GENERATE; day++) {

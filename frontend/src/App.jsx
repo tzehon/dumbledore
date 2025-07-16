@@ -559,10 +559,11 @@ function CampaignView({ templates, trackingIds, isLoadingDropdowns, requestTimin
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
     const [campaignQueryDuration, setCampaignQueryDuration] = useState(null);
-    // --- CHANGE: New state for pagination ---
+    // --- CHANGE: New state for Load More pattern ---
     const [page, setPage] = useState(1);
     const [totalPages, setTotalPages] = useState(0);
     const [totalUsers, setTotalUsers] = useState(0);
+    const [hasMore, setHasMore] = useState(false);
     const [campaignTimings, setCampaignTimings] = useState({});
 
     // Helper function to track API request timing for campaign
@@ -686,10 +687,17 @@ function CampaignView({ templates, trackingIds, isLoadingDropdowns, requestTimin
                 return res.json().then(data => ({ data, response: res }));
             })
             .then(({ data, response }) => {
-                setDistinctUsers(data.data);
+                if (newPage === 1) {
+                    // New search - replace data
+                    setDistinctUsers(data.data);
+                } else {
+                    // Load more - append data
+                    setDistinctUsers(prev => [...prev, ...data.data]);
+                }
                 setTotalUsers(data.total);
                 setTotalPages(data.totalPages);
                 setPage(data.page);
+                setHasMore(data.hasMore);
                 const duration = finishTracking(true, response);
                 setCampaignQueryDuration(duration);
             })
@@ -700,6 +708,7 @@ function CampaignView({ templates, trackingIds, isLoadingDropdowns, requestTimin
                 setError("Failed to search for campaign users.");
                 setDistinctUsers([]);
                 setTotalUsers(0);
+                setHasMore(false);
                 finishTracking(false);
             })
             .finally(() => {
@@ -746,23 +755,35 @@ function CampaignView({ templates, trackingIds, isLoadingDropdowns, requestTimin
             </form>
             <div>
                 {isLoading && <p>Loading results...</p>}
-                {totalUsers > 0 && (
+                {distinctUsers.length > 0 && (
                     <div>
                         <div className="flex justify-between items-center">
                             <h3 className="font-semibold text-lg">
-                                Found {totalUsers.toLocaleString()} unique users (Read)
+                                Showing {distinctUsers.length} unique users (Read)
                                 {campaignQueryDuration !== null && <span className="text-sm text-gray-500 ml-2">(Query took: {campaignQueryDuration}ms)</span>}
                             </h3>
                             <div className="flex items-center gap-2">
-                                <button onClick={() => handleSearch(page - 1)} disabled={page <= 1} className="px-3 py-1 bg-gray-200 rounded-md disabled:opacity-50">Previous</button>
-                                <span>Page {page} of {totalPages}</span>
-                                <button onClick={() => handleSearch(page + 1)} disabled={page >= totalPages} className="px-3 py-1 bg-gray-200 rounded-md disabled:opacity-50">Next</button>
+                                {hasMore && (
+                                    <button 
+                                        onClick={() => handleSearch(page + 1)} 
+                                        disabled={isLoading} 
+                                        className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        {isLoading ? 'Loading...' : 'Load More'}
+                                    </button>
+                                )}
+                                {!hasMore && distinctUsers.length > 0 && (
+                                    <span className="text-sm text-gray-500">No more results</span>
+                                )}
                             </div>
                         </div>
                         <div className="mt-2 bg-gray-100 p-4 rounded-md max-h-60 overflow-y-auto">
-                            {distinctUsers.length > 0 ? distinctUsers.join(', ') : 'No users found for this criteria.'}
+                            {distinctUsers.join(', ')}
                         </div>
                     </div>
+                )}
+                {!isLoading && distinctUsers.length === 0 && (
+                    <p className="text-gray-500 mt-4">No users found for this criteria.</p>
                 )}
             </div>
             <RequestTimingsDisplay requestTimings={{...requestTimings, ...campaignTimings}} />

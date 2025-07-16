@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "node server.js --debug",
     "prod": "node server.js",
-    "setup": "node setup.js",
+    "setup": "node setup.js --reset",
+    "setup:reset": "node setup.js --reset",
+    "setup:append": "node setup.js --append",
     "stats": "node stats.js",
     "benchmark": "node benchmark.js",
     "test": "echo \"Error: no test specified\" && exit 1"

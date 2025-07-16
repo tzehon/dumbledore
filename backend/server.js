@@ -220,7 +220,7 @@ app.put('/api/communications/status', async (req, res) => {
 app.get('/api/campaigns/distinct-users', async (req, res) => {
     const db = await connectToDbForServer();
     const { date, hour, templateId, trackingId, page = 1 } = req.query;
-    const PAGE_SIZE = 50;
+    const PAGE_SIZE = 10;
 
     if (!date || !hour || !templateId || !trackingId) {
         return res.status(400).send('Missing required query parameters.');
@@ -247,16 +247,13 @@ app.get('/api/campaigns/distinct-users', async (req, res) => {
         }
     };
 
+    // Optimized pipeline without expensive count operation
     const pipeline = [
         matchStage,
         { $group: { _id: "$user.id" } },
         { $sort: { _id: 1 } },
-        {
-            $facet: {
-                metadata: [{ $count: "total" }],
-                data: [{ $skip: (page - 1) * PAGE_SIZE }, { $limit: PAGE_SIZE }]
-            }
-        }
+        { $skip: (page - 1) * PAGE_SIZE },
+        { $limit: PAGE_SIZE + 1 } // Get one extra to check if more exists
     ];
 
     if (DEBUG_MODE) {
@@ -271,14 +268,18 @@ app.get('/api/campaigns/distinct-users', async (req, res) => {
 
     addTimingData(req, res, dbStartTime, dbEndTime);
 
-    const data = results[0].data.map(doc => doc._id);
-    const total = results[0].metadata[0] ? results[0].metadata[0].total : 0;
+    // Check if we have more results than the page size
+    const hasMore = results.length > PAGE_SIZE;
+    
+    // Remove the extra result if we have more than PAGE_SIZE
+    const data = results.slice(0, PAGE_SIZE).map(doc => doc._id);
 
     res.json({
         data,
-        total,
+        total: -1, // Unknown total (not calculated for performance)
         page: parseInt(page),
-        totalPages: Math.ceil(total / PAGE_SIZE)
+        totalPages: -1, // Unknown total pages
+        hasMore: hasMore
     });
 });
 

@@ -382,8 +382,11 @@ async function runBenchmark() {
         const timestamp = new Date().toISOString();
         const report = generateMarkdownReport(results, collectionStats, timestamp);
         
-        // Save report to file
-        const reportPath = path.join(__dirname, 'benchmark-report.md');
+        // Save report to file with dynamic filename
+        const sanitizedTier = collectionStats.serverTier.replace(/[^a-zA-Z0-9]/g, '_');
+        const numDocs = collectionStats.documents;
+        const filename = `${sanitizedTier}_${numDocs}.md`;
+        const reportPath = path.join(__dirname, filename);
         fs.writeFileSync(reportPath, report);
         
         console.log('\n✅ Benchmark completed!');
