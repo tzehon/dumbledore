@@ -186,6 +186,12 @@ npm run setup
 npm run stats
 ```
 
+**To run performance benchmark:**
+```bash
+# In ./backend terminal (requires backend production server only)
+npm run benchmark
+```
+
 **To run the app:**
 
 **Production Mode (Optimized):**
