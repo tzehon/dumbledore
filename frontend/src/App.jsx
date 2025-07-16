@@ -8,11 +8,20 @@ export default function App() {
   const [communications, setCommunications] = useState([]);
   const [isLoadingComms, setIsLoadingComms] = useState(false);
   const [view, setView] = useState('dashboard'); // 'dashboard' or 'campaign'
+
+  // Clear request timings when switching views
+  const handleViewChange = (newView) => {
+    setRequestTimings({});
+    setView(newView);
+  };
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [error, setError] = useState(null);
   const [lookupUserId, setLookupUserId] = useState('1001'); // The value in the input box
   const [searchedUserId, setSearchedUserId] = useState(''); // The ID that has been searched for
   const [queryDuration, setQueryDuration] = useState(null);
+  
+  // Track timing for all API requests
+  const [requestTimings, setRequestTimings] = useState({});
 
   const [templates, setTemplates] = useState([]);
   const [trackingIds, setTrackingIds] = useState([]);
@@ -20,14 +29,45 @@ export default function App() {
 
   const initialLoadDone = useRef(false);
 
+  // Helper function to track API request timing
+  const trackApiCall = (requestKey, type, description, clearPrevious = false) => {
+    // Only clear previous timings if explicitly requested (for user-initiated actions)
+    if (clearPrevious) {
+      setRequestTimings({});
+    }
+    
+    const startTime = performance.now();
+    
+    const finishTracking = (success = true) => {
+      const endTime = performance.now();
+      const duration = Math.round(endTime - startTime);
+      
+      setRequestTimings(prev => ({
+        ...prev,
+        [requestKey]: {
+          duration,
+          type, // 'read' or 'write'
+          description,
+          timestamp: new Date().toISOString(),
+          success
+        }
+      }));
+      
+      return duration;
+    };
+    
+    return { finishTracking };
+  };
+
   // Fetch communications when a searched user or date changes
-  const fetchCommunications = useCallback((userId, date) => {
+  const fetchCommunications = useCallback((userId, date, clearPrevious = false) => {
     if (!userId) return;
     setIsLoadingComms(true);
     setError(null);
     setQueryDuration(null);
 
-    const startTime = performance.now();
+    const requestKey = `fetch-comms-${userId}-${date}`;
+    const { finishTracking } = trackApiCall(requestKey, 'read', `Fetch communications for user ${userId} on ${date}`, clearPrevious);
 
     const startOfDay = new Date(date);
     startOfDay.setUTCHours(0,0,0,0);
@@ -42,14 +82,15 @@ export default function App() {
       })
       .then(data => {
         setCommunications(data);
+        const duration = finishTracking(true);
+        setQueryDuration(duration);
       })
       .catch(error => {
         console.error("Fetch communications error:", error);
         setError("Failed to fetch communications. Please check the server connection or user ID.");
+        finishTracking(false);
       })
       .finally(() => {
-        const endTime = performance.now();
-        setQueryDuration(Math.round(endTime - startTime));
         setIsLoadingComms(false);
       });
   }, []);
@@ -63,8 +104,33 @@ export default function App() {
     setSearchedUserId('1001');
 
     setIsLoadingDropdowns(true);
-    const fetchTemplates = fetch(`${API_BASE_URL}/templates`).then(res => res.json());
-    const fetchTrackingIds = fetch(`${API_BASE_URL}/tracking-ids`).then(res => res.json());
+    
+    const templatesKey = 'fetch-templates';
+    const trackingIdsKey = 'fetch-tracking-ids';
+    const { finishTracking: finishTemplatesTracking } = trackApiCall(templatesKey, 'read', 'Fetch templates');
+    const { finishTracking: finishTrackingIdsTracking } = trackApiCall(trackingIdsKey, 'read', 'Fetch tracking IDs');
+    
+    const fetchTemplates = fetch(`${API_BASE_URL}/templates`)
+      .then(res => res.json())
+      .then(data => {
+        finishTemplatesTracking(true);
+        return data;
+      })
+      .catch(err => {
+        finishTemplatesTracking(false);
+        throw err;
+      });
+    
+    const fetchTrackingIds = fetch(`${API_BASE_URL}/tracking-ids`)
+      .then(res => res.json())
+      .then(data => {
+        finishTrackingIdsTracking(true);
+        return data;
+      })
+      .catch(err => {
+        finishTrackingIdsTracking(false);
+        throw err;
+      });
 
     Promise.all([fetchTemplates, fetchTrackingIds])
         .then(([templateData, trackingIdData]) => {
@@ -84,7 +150,7 @@ export default function App() {
     if (!initialLoadDone.current) return;
 
     if (searchedUserId) {
-        fetchCommunications(searchedUserId, selectedDate);
+        fetchCommunications(searchedUserId, selectedDate, true);
     }
   }, [searchedUserId, selectedDate, fetchCommunications]);
 
@@ -96,7 +162,7 @@ export default function App() {
 
   const handleSearch = () => {
     if (lookupUserId === searchedUserId) {
-        fetchCommunications(lookupUserId, selectedDate);
+        fetchCommunications(lookupUserId, selectedDate, true);
     } else {
         setSearchedUserId(lookupUserId);
     }
@@ -112,6 +178,9 @@ export default function App() {
       newStatus: newStatus
     };
 
+    const requestKey = `update-status-${comm.metadata.tracking_id}-${Date.now()}`;
+    const { finishTracking } = trackApiCall(requestKey, 'write', `Update status to ${newStatus} for tracking ID ${comm.metadata.tracking_id}`, true);
+
     fetch(`${API_BASE_URL}/communications/status`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -121,10 +190,14 @@ export default function App() {
         if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
         return res.json();
     })
-    .then(() => fetchCommunications(searchedUserId, selectedDate)) // Refresh data
+    .then(() => {
+        finishTracking(true);
+        fetchCommunications(searchedUserId, selectedDate, false); // Refresh data without clearing timings
+    })
     .catch(err => {
         console.error("Update status error:", err);
         setError("Failed to update status. Please try again.");
+        finishTracking(false);
     });
   };
 
@@ -134,6 +207,9 @@ export default function App() {
     const templateId = `template_${String(Math.floor(Math.random() * 20) + 1).padStart(3, '0')}`;
     const trackingId = `track_${String(Math.floor(Math.random() * 10) + 1).padStart(3, '0')}`;
     const userType = Math.random() > 0.5 ? 'premium' : 'standard'; // Assume we get this from somewhere
+
+    const requestKey = `send-comms-${searchedUserId}-${Date.now()}`;
+    const { finishTracking } = trackApiCall(requestKey, 'write', `Append ${count} communications for user ${searchedUserId}`, true);
 
     fetch(`${API_BASE_URL}/communications`, {
         method: 'POST',
@@ -148,9 +224,10 @@ export default function App() {
         return res.json();
     })
     .then(() => {
+        finishTracking(true);
         const today = new Date().toISOString().split('T')[0];
         if (selectedDate === today) {
-            fetchCommunications(searchedUserId, selectedDate);
+            fetchCommunications(searchedUserId, selectedDate, false); // Refresh data without clearing timings
         } else {
             alert(`${count} new communication(s) sent for today.`);
         }
@@ -158,6 +235,7 @@ export default function App() {
     .catch(err => {
         console.error("Send new comm error:", err);
         setError(err.message);
+        finishTracking(false);
     });
   };
 
@@ -181,6 +259,9 @@ export default function App() {
         }
     ];
 
+    const requestKey = `replace-comms-${searchedUserId}-${selectedDate}-${Date.now()}`;
+    const { finishTracking } = trackApiCall(requestKey, 'write', `Replace communications for user ${searchedUserId} on ${selectedDate}`, true);
+
     fetch(`${API_BASE_URL}/communications/replace`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -195,18 +276,20 @@ export default function App() {
         return res.json();
     })
     .then(() => {
+        finishTracking(true);
         alert(`Communications for ${selectedDate} have been replaced.`);
-        fetchCommunications(searchedUserId, selectedDate); // Refresh data
+        fetchCommunications(searchedUserId, selectedDate, false); // Refresh data without clearing timings
     })
     .catch(err => {
         console.error("Replace comms error:", err);
         setError("Failed to replace communications. Please try again.");
+        finishTracking(false);
     });
   };
 
   return (
     <div className="bg-gray-50 min-h-screen font-sans">
-      <Header setView={setView} currentView={view} />
+      <Header setView={handleViewChange} currentView={view} />
       <main className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
         {error && <ErrorMessage message={error} />}
         {view === 'dashboard' ? (
@@ -222,12 +305,14 @@ export default function App() {
             setLookupUserId={setLookupUserId}
             onSearch={handleSearch}
             queryDuration={queryDuration}
+            requestTimings={requestTimings}
           />
         ) : (
           <CampaignView
             templates={templates}
             trackingIds={trackingIds}
             isLoadingDropdowns={isLoadingDropdowns}
+            requestTimings={requestTimings}
           />
         )}
       </main>
@@ -275,7 +360,7 @@ function Header({ setView, currentView }) {
   );
 }
 
-function Dashboard({ communications, isLoadingComms, onUpdateStatus, onSendNewComm, onReplaceComms, selectedDate, onDateChange, lookupUserId, setLookupUserId, onSearch, queryDuration }) {
+function Dashboard({ communications, isLoadingComms, onUpdateStatus, onSendNewComm, onReplaceComms, selectedDate, onDateChange, lookupUserId, setLookupUserId, onSearch, queryDuration, requestTimings }) {
   return (
     <div>
       <UserLookup
@@ -283,6 +368,7 @@ function Dashboard({ communications, isLoadingComms, onUpdateStatus, onSendNewCo
         setLookupUserId={setLookupUserId}
         onSendNewComm={onSendNewComm}
         onSearch={onSearch}
+        requestTimings={requestTimings}
       />
       <CommunicationsLog
           communications={communications}
@@ -292,12 +378,14 @@ function Dashboard({ communications, isLoadingComms, onUpdateStatus, onSendNewCo
           selectedDate={selectedDate}
           onDateChange={onDateChange}
           queryDuration={queryDuration}
+          requestTimings={requestTimings}
       />
+      <RequestTimingsDisplay requestTimings={requestTimings} />
     </div>
   );
 }
 
-function UserLookup({ lookupUserId, setLookupUserId, onSendNewComm, onSearch }) {
+function UserLookup({ lookupUserId, setLookupUserId, onSendNewComm, onSearch, requestTimings }) {
     const [count, setCount] = useState(1);
 
     const handleKeyDown = (e) => {
@@ -341,13 +429,12 @@ function UserLookup({ lookupUserId, setLookupUserId, onSendNewComm, onSearch }) 
     );
 }
 
-function CommunicationsLog({ communications, isLoading, onUpdateStatus, onReplaceComms, selectedDate, onDateChange, queryDuration }) {
+function CommunicationsLog({ communications, isLoading, onUpdateStatus, onReplaceComms, selectedDate, onDateChange, queryDuration, requestTimings }) {
   return (
     <div className="bg-white p-4 rounded-lg shadow">
       <div className="flex justify-between items-center mb-4 border-b pb-2">
         <div className="flex items-center gap-2">
             <h3 className="text-lg font-semibold text-gray-700">Communications Log</h3>
-            {queryDuration && <span className="text-sm text-gray-500">(Query took: {queryDuration}ms)</span>}
         </div>
         <div className="flex items-center gap-4">
           <input type="date" value={selectedDate} onChange={onDateChange} className="p-1 border border-gray-300 rounded-md shadow-sm"/>
@@ -382,7 +469,7 @@ function CommunicationsLog({ communications, isLoading, onUpdateStatus, onReplac
   );
 }
 
-function CampaignView({ templates, trackingIds, isLoadingDropdowns }) {
+function CampaignView({ templates, trackingIds, isLoadingDropdowns, requestTimings }) {
     const [params, setParams] = useState({
         date: new Date().toISOString().split('T')[0],
         hour: new Date().getHours(),
@@ -397,6 +484,37 @@ function CampaignView({ templates, trackingIds, isLoadingDropdowns }) {
     const [page, setPage] = useState(1);
     const [totalPages, setTotalPages] = useState(0);
     const [totalUsers, setTotalUsers] = useState(0);
+    const [campaignTimings, setCampaignTimings] = useState({});
+
+    // Helper function to track API request timing for campaign
+    const trackCampaignApiCall = (requestKey, type, description, clearPrevious = true) => {
+        // Clear all previous campaign timings when starting a new user action
+        if (clearPrevious) {
+            setCampaignTimings({});
+        }
+        
+        const startTime = performance.now();
+        
+        const finishTracking = (success = true) => {
+            const endTime = performance.now();
+            const duration = Math.round(endTime - startTime);
+            
+            setCampaignTimings(prev => ({
+                ...prev,
+                [requestKey]: {
+                    duration,
+                    type, // 'read' or 'write'
+                    description,
+                    timestamp: new Date().toISOString(),
+                    success
+                }
+            }));
+            
+            return duration;
+        };
+        
+        return { finishTracking };
+    };
 
     // Set initial params once dropdown data is available
     useEffect(() => {
@@ -414,7 +532,8 @@ function CampaignView({ templates, trackingIds, isLoadingDropdowns }) {
         setCampaignQueryDuration(null);
         setError(null);
 
-        const startTime = performance.now();
+        const requestKey = `campaign-search-${params.date}-${params.hour}-${params.templateId}-${params.trackingId}-page${newPage}`;
+        const { finishTracking } = trackCampaignApiCall(requestKey, 'read', `Campaign search for ${params.templateId} on ${params.date} hour ${params.hour}`);
 
         const query = { ...params, page: newPage };
         const queryString = new URLSearchParams(query).toString();
@@ -429,16 +548,17 @@ function CampaignView({ templates, trackingIds, isLoadingDropdowns }) {
                 setTotalUsers(data.total);
                 setTotalPages(data.totalPages);
                 setPage(data.page);
+                const duration = finishTracking(true);
+                setCampaignQueryDuration(duration);
             })
             .catch(err => {
                 console.error("Campaign search error:", err);
                 setError("Failed to search for campaign users.");
                 setDistinctUsers([]);
                 setTotalUsers(0);
+                finishTracking(false);
             })
             .finally(() => {
-                const endTime = performance.now();
-                setCampaignQueryDuration(Math.round(endTime - startTime));
                 setIsLoading(false);
             });
     }, [params]);
@@ -499,6 +619,53 @@ function CampaignView({ templates, trackingIds, isLoadingDropdowns }) {
                             {distinctUsers.length > 0 ? distinctUsers.join(', ') : 'No users found for this criteria.'}
                         </div>
                     </div>
+                )}
+            </div>
+            <RequestTimingsDisplay requestTimings={{...requestTimings, ...campaignTimings}} />
+        </div>
+    );
+}
+
+function RequestTimingsDisplay({ requestTimings }) {
+    const timingEntries = Object.entries(requestTimings).sort((a, b) => 
+        new Date(b[1].timestamp) - new Date(a[1].timestamp)
+    );
+
+    if (timingEntries.length === 0) {
+        return null;
+    }
+
+    return (
+        <div className="bg-white p-4 rounded-lg shadow mt-6">
+            <h3 className="text-lg font-semibold text-gray-700 mb-4">API Request Timings</h3>
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+                {timingEntries.slice(0, 10).map(([key, timing]) => (
+                    <div key={key} className="flex justify-between items-center p-3 bg-gray-50 rounded-md">
+                        <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                                <span className={`px-2 py-1 text-xs font-bold rounded-full ${
+                                    timing.type === 'read' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
+                                }`}>
+                                    {timing.type.toUpperCase()}
+                                </span>
+                                <span className={`px-2 py-1 text-xs font-bold rounded-full ${
+                                    timing.success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                                }`}>
+                                    {timing.success ? 'SUCCESS' : 'FAILED'}
+                                </span>
+                            </div>
+                            <p className="text-sm text-gray-700 mt-1">{timing.description}</p>
+                            <p className="text-xs text-gray-500">{new Date(timing.timestamp).toLocaleTimeString()}</p>
+                        </div>
+                        <div className="text-right">
+                            <p className="font-semibold text-gray-800">{timing.duration}ms</p>
+                        </div>
+                    </div>
+                ))}
+                {timingEntries.length > 10 && (
+                    <p className="text-sm text-gray-500 text-center pt-2">
+                        Showing latest 10 of {timingEntries.length} requests
+                    </p>
                 )}
             </div>
         </div>
