@@ -13,10 +13,13 @@ app.use(express.json());
 async function logQueryPlan(db, collectionName, query) {
     try {
         const explain = await db.collection(collectionName).find(query).explain("executionStats");
-        if (explain.executionStats.executionStages.stage === 'COLLSCAN') {
+        const executionStages = explain.executionStats?.executionStages;
+        if (executionStages?.stage === 'COLLSCAN') {
             console.log(` -> Query Plan: Collection Scan (COLLSCAN) - Consider adding an index.`);
+        } else if (executionStages?.inputStage?.indexName) {
+            console.log(` -> Query Plan: Used index '${executionStages.inputStage.indexName}'`);
         } else {
-            console.log(` -> Query Plan: Used index '${explain.executionStats.executionStages.inputStage.indexName}'`);
+            console.log(" -> Query Plan: Could not determine index usage from explain output.");
         }
     } catch (e) {
         console.error(" -> Explain failed:", e.message);
@@ -24,16 +27,16 @@ async function logQueryPlan(db, collectionName, query) {
 }
 
 async function logAggregationPlan(db, collectionName, pipeline) {
-     try {
-        const explain = await db.collection(collectionName).aggregate(pipeline).explain("executionStats");
-        const winningPlan = explain.stages[0]?.$cursor?.queryPlanner?.winningPlan || explain.stages[0]?.winningPlan;
-        if (winningPlan?.stage === 'COLLSCAN') {
-            console.log(` -> Query Plan: Collection Scan (COLLSCAN) - Consider adding an index to support the aggregation.`);
-        } else if (winningPlan?.stage === 'DISTINCT_SCAN') {
-            console.log(` -> Query Plan: Used index for distinct scan on '${winningPlan.keyPattern ? Object.keys(winningPlan.keyPattern) : 'unknown'}'`);
-        }
-         else {
-            console.log(` -> Query Plan: Stage is '${winningPlan?.stage}'`);
+    try {
+        // For aggregation pipelines, we'll analyze just the $match stage
+        // since that's where index usage is most relevant
+        const matchStage = pipeline.find(stage => stage.$match);
+
+        if (matchStage) {
+            // Use the existing logQueryPlan function for the match query
+            await logQueryPlan(db, collectionName, matchStage.$match);
+        } else {
+            console.log(" -> Query Plan: No $match stage found in aggregation pipeline");
         }
     } catch (e) {
         console.error(" -> Explain for aggregation failed:", e.message);
@@ -254,6 +257,7 @@ app.get('/api/templates', async (req, res) => {
     const db = await connectToDbForServer();
     console.log("\n--- Backend Query Log (Get Templates) ---");
     console.log("db.collection('communications').distinct('events.metadata.template_id')");
+    // Note: .explain() is not applicable to the distinct command itself, but we can see the supporting index being created in setup.js
     const templates = await db.collection('communications').distinct('events.metadata.template_id');
     res.json(templates.sort());
 });
@@ -262,6 +266,7 @@ app.get('/api/tracking-ids', async (req, res) => {
     const db = await connectToDbForServer();
     console.log("\n--- Backend Query Log (Get Tracking IDs) ---");
     console.log("db.collection('communications').distinct('events.metadata.tracking_id')");
+    // Note: .explain() is not applicable to the distinct command itself, but the supporting index is logged in setup.js
     const trackingIds = await db.collection('communications').distinct('events.metadata.tracking_id');
     res.json(trackingIds.sort());
 });
