@@ -26,7 +26,7 @@ const NUM_USERS_PRODUCTION = 50000000;
 const COMMS_PER_USER_PER_DAY = 5;
 
 // --- Development Scale Parameters ---
-const NUM_USERS_TO_GENERATE = 1000000;
+const NUM_USERS_TO_GENERATE = 50000000;
 const DAYS_OF_DATA_TO_GENERATE = 3; // Align with 3-day retention policy
 const BATCH_SIZE = 500000; // Insert documents in batches of this size
 
@@ -101,7 +101,7 @@ async function setupAndSeedDatabase() {
         const preGeneratedTrackingIds = Array.from({ length: 50000 }, () => faker.helpers.arrayElement(TRACKING_IDS));
         const preGeneratedStatuses = Array.from({ length: 100000 }, () => faker.helpers.arrayElement(STATUSES));
         const preGeneratedScores = Array.from({ length: 100000 }, () => faker.number.float({ min: 0.6, max: 1.0, multipleOf: 0.01 }));
-        
+
         // Pre-generate time components for performance
         const preGeneratedHours = Array.from({ length: 10000 }, () => faker.number.int({ min: 0, max: 23 }));
         const preGeneratedMinutes = Array.from({ length: 10000 }, () => faker.number.int({ min: 0, max: 59 }));
@@ -157,29 +157,29 @@ async function setupAndSeedDatabase() {
                     });
                     totalDocumentsInserted += BATCH_SIZE;
                     bucketBatch = []; // Reset the batch
-                    
+
                     const timestamp = new Date().toISOString();
                     console.log(`   [${timestamp}] Inserted a batch of ${BATCH_SIZE} documents.`);
-                    
+
                     // Every 500k documents, show progress estimates
                     if (totalDocumentsInserted % 500000 === 0) {
                         const currentTime = performance.now();
                         const elapsedTime = currentTime - startTime;
                         const documentsPerMs = totalDocumentsInserted / elapsedTime;
-                        
+
                         // Calculate total expected documents
                         const totalExpectedDocs = NUM_USERS_TO_GENERATE * DAYS_OF_DATA_TO_GENERATE;
                         const prodExpectedDocs = NUM_USERS_PRODUCTION * DAYS_OF_DATA_TO_GENERATE;
-                        
+
                         // Time estimates for NUM_USERS_TO_GENERATE
                         const remainingDocs = totalExpectedDocs - totalDocumentsInserted;
                         const estimatedTimeLeftMs = remainingDocs / documentsPerMs;
                         const estimatedTimeLeftMinutes = (estimatedTimeLeftMs / (1000 * 60)).toFixed(2);
-                        
+
                         // Time estimates for NUM_USERS_PRODUCTION
                         const prodTimeMs = prodExpectedDocs / documentsPerMs;
                         const prodTimeHours = (prodTimeMs / (1000 * 60 * 60)).toFixed(2);
-                        
+
                         console.log(`\n📊 Progress Update (${totalDocumentsInserted.toLocaleString()} documents inserted):`);
                         console.log(`   Time remaining for ${NUM_USERS_TO_GENERATE.toLocaleString()} users: ~${estimatedTimeLeftMinutes} minutes`);
                         console.log(`   Estimated time for ${NUM_USERS_PRODUCTION.toLocaleString()} users: ~${prodTimeHours} hours\n`);
@@ -204,7 +204,7 @@ async function setupAndSeedDatabase() {
 
         // Create indexes after upload for optimal performance
         console.log("\n🔧 Creating indexes (this may take a few minutes for large datasets)...");
-        
+
         await communicationsCollection.createIndex({ "user.id": 1, day: 1 });
         console.log("-> Created primary compound index for user/day lookups.");
 
@@ -226,13 +226,14 @@ async function setupAndSeedDatabase() {
 
         await communicationsCollection.createIndex({ "events.metadata.template_id": 1 });
         console.log("-> Created multikey index for template ID lookups.");
-        
+
         await communicationsCollection.createIndex({ "events.metadata.tracking_id": 1 });
         console.log("-> Created multikey index for tracking ID lookups.");
 
-        await communicationsCollection.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
-        console.log("-> Created TTL index on communications.");
-        
+        // await communicationsCollection.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
+        // console.log("-> Created TTL index on communications.");
+        console.log("-> Skipped TTL index on communications.");
+
         console.log("\n✅ All indexes created successfully!");
 
         console.log(`\n⏱️ Performance & Estimation:`);
