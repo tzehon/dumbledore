@@ -1,5 +1,5 @@
 // This is a standalone script to set up and seed the database.
-// Usage: 
+// Usage:
 //   node setup.js --reset    (default: drop collection and reseed)
 //   node setup.js --append   (append new data to existing collection)
 
@@ -26,9 +26,9 @@ const NUM_USERS_PRODUCTION = 50000000;
 const COMMS_PER_USER_PER_DAY = 5;
 
 // --- Development Scale Parameters ---
-const NUM_USERS_TO_GENERATE = 50000000;
+const NUM_USERS_TO_GENERATE = 1000000;
 const DAYS_OF_DATA_TO_GENERATE = 3; // Align with 3-day retention policy
-const BATCH_SIZE = 10000; // Insert documents in batches of this size
+const BATCH_SIZE = 500000; // Insert documents in batches of this size
 
 const USER_TYPES = ["premium", "standard", "trial"];
 const TEMPLATES = Array.from({ length: 20 }, (_, i) => `template_${String(i + 1).padStart(3, '0')}`);
@@ -47,7 +47,7 @@ async function setupAndSeedDatabase() {
 
         // 1. Setup Database Schema
         if (isResetMode) {
-            console.log("Setting up database collection and indexes...");
+            console.log("Setting up database collection...");
             try {
                 await db.collection('communications').drop();
                 console.log("Dropped existing communications collection.");
@@ -60,34 +60,20 @@ async function setupAndSeedDatabase() {
             console.log("Append mode: Keeping existing collection and data...");
         }
 
-        // Create indexes (safe to run multiple times)
-        await communicationsCollection.createIndex({ "user.id": 1, day: 1 });
-        console.log("-> Created/ensured primary compound index for user/day lookups.");
-
-        await communicationsCollection.createIndex({
-            "day": 1,
-            "events.metadata.template_id": 1,
-            "events.metadata.tracking_id": 1,
-            "events.dispatch_time": 1
-        });
-        console.log("-> Created compound index for campaign lookups (distinct).");
-
-        await communicationsCollection.createIndex({
-            "user.id": 1,
-            "events.dispatch_time": 1,
-            "events.metadata.template_id": 1,
-            "events.metadata.tracking_id": 1,
-        });
-        console.log("-> Created compound index on event details for status updates.");
-
-        await communicationsCollection.createIndex({ "events.metadata.template_id": 1 });
-        console.log("-> Created multikey index for template ID lookups.");
-        await communicationsCollection.createIndex({ "events.metadata.tracking_id": 1 });
-        console.log("-> Created multikey index for tracking ID lookups.");
-
-        await communicationsCollection.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
-        console.log("-> Created TTL index on communications.");
-        console.log("Database setup complete!");
+        // Drop all indexes (except _id) for maximum upload speed
+        console.log("Dropping existing indexes for maximum upload performance...");
+        try {
+            const indexes = await communicationsCollection.listIndexes().toArray();
+            for (const index of indexes) {
+                if (index.name !== '_id_') {
+                    await communicationsCollection.dropIndex(index.name);
+                    console.log(`-> Dropped index: ${index.name}`);
+                }
+            }
+        } catch (e) {
+            console.log("-> No existing indexes to drop (collection may be new)");
+        }
+        console.log("Database prepared for high-speed upload!");
 
         // 2. Generate Data
         console.log(`\nGenerating data for ${NUM_USERS_TO_GENERATE.toLocaleString('en-US')} users...`);
@@ -108,30 +94,47 @@ async function setupAndSeedDatabase() {
 
         const startTime = performance.now();
 
+        // Pre-generate common values to avoid repeated faker calls
+        console.log("Pre-generating common values for performance...");
+        const preGeneratedUserTypes = Array.from({ length: 10000 }, () => faker.helpers.arrayElement(USER_TYPES));
+        const preGeneratedTemplates = Array.from({ length: 50000 }, () => faker.helpers.arrayElement(TEMPLATES));
+        const preGeneratedTrackingIds = Array.from({ length: 50000 }, () => faker.helpers.arrayElement(TRACKING_IDS));
+        const preGeneratedStatuses = Array.from({ length: 100000 }, () => faker.helpers.arrayElement(STATUSES));
+        const preGeneratedScores = Array.from({ length: 100000 }, () => faker.number.float({ min: 0.6, max: 1.0, multipleOf: 0.01 }));
+        
+        // Pre-generate time components for performance
+        const preGeneratedHours = Array.from({ length: 10000 }, () => faker.number.int({ min: 0, max: 23 }));
+        const preGeneratedMinutes = Array.from({ length: 10000 }, () => faker.number.int({ min: 0, max: 59 }));
+        const preGeneratedSeconds = Array.from({ length: 10000 }, () => faker.number.int({ min: 0, max: 59 }));
+        console.log("Pre-generation complete!");
+
         // --- CHANGE: Use iterative batch insert for performance ---
         let bucketBatch = [];
+        let totalDocumentsInserted = 0;
+        let preGenIndex = 0;
         for (let i = 0; i < NUM_USERS_TO_GENERATE; i++) {
             const userId = startingUserId + i;
-            const userType = faker.helpers.arrayElement(USER_TYPES);
+            const userType = preGeneratedUserTypes[i % preGeneratedUserTypes.length];
 
             for (let day = 0; day < DAYS_OF_DATA_TO_GENERATE; day++) {
                 let eventsForDay = [];
                 for (let j = 0; j < COMMS_PER_USER_PER_DAY; j++) {
                     const baseDate = new Date();
                     baseDate.setDate(baseDate.getDate() - day);
-                    baseDate.setHours(faker.number.int({ min: 0, max: 23 }));
-                    baseDate.setMinutes(faker.number.int({ min: 0, max: 59 }));
-                    baseDate.setSeconds(faker.number.int({ min: 0, max: 59 }));
+                    baseDate.setHours(preGeneratedHours[preGenIndex % preGeneratedHours.length]);
+                    baseDate.setMinutes(preGeneratedMinutes[preGenIndex % preGeneratedMinutes.length]);
+                    baseDate.setSeconds(preGeneratedSeconds[preGenIndex % preGeneratedSeconds.length]);
 
                     eventsForDay.push({
                         dispatch_time: baseDate,
                         metadata: {
-                            tracking_id: faker.helpers.arrayElement(TRACKING_IDS),
-                            template_id: faker.helpers.arrayElement(TEMPLATES),
+                            tracking_id: preGeneratedTrackingIds[preGenIndex % preGeneratedTrackingIds.length],
+                            template_id: preGeneratedTemplates[preGenIndex % preGeneratedTemplates.length],
                         },
-                        content_score: faker.number.float({ min: 0.6, max: 1.0, multipleOf: 0.01 }),
-                        status: faker.helpers.arrayElement(STATUSES)
+                        content_score: preGeneratedScores[preGenIndex % preGeneratedScores.length],
+                        status: preGeneratedStatuses[preGenIndex % preGeneratedStatuses.length]
                     });
+                    preGenIndex++;
                 }
 
                 const startOfDay = new Date(eventsForDay[0].dispatch_time);
@@ -148,16 +151,49 @@ async function setupAndSeedDatabase() {
 
                 // When batch is full, insert and clear
                 if (bucketBatch.length >= BATCH_SIZE) {
-                    await communicationsCollection.insertMany(bucketBatch);
+                    await communicationsCollection.insertMany(bucketBatch, {
+                        ordered: false,  // Allow parallel execution
+                        writeConcern: { w: 1, j: false }  // Optimize write concern
+                    });
+                    totalDocumentsInserted += BATCH_SIZE;
                     bucketBatch = []; // Reset the batch
-                    console.log(`   ... Inserted a batch of ${BATCH_SIZE} documents.`);
+                    
+                    const timestamp = new Date().toISOString();
+                    console.log(`   [${timestamp}] Inserted a batch of ${BATCH_SIZE} documents.`);
+                    
+                    // Every 500k documents, show progress estimates
+                    if (totalDocumentsInserted % 500000 === 0) {
+                        const currentTime = performance.now();
+                        const elapsedTime = currentTime - startTime;
+                        const documentsPerMs = totalDocumentsInserted / elapsedTime;
+                        
+                        // Calculate total expected documents
+                        const totalExpectedDocs = NUM_USERS_TO_GENERATE * DAYS_OF_DATA_TO_GENERATE;
+                        const prodExpectedDocs = NUM_USERS_PRODUCTION * DAYS_OF_DATA_TO_GENERATE;
+                        
+                        // Time estimates for NUM_USERS_TO_GENERATE
+                        const remainingDocs = totalExpectedDocs - totalDocumentsInserted;
+                        const estimatedTimeLeftMs = remainingDocs / documentsPerMs;
+                        const estimatedTimeLeftMinutes = (estimatedTimeLeftMs / (1000 * 60)).toFixed(2);
+                        
+                        // Time estimates for NUM_USERS_PRODUCTION
+                        const prodTimeMs = prodExpectedDocs / documentsPerMs;
+                        const prodTimeHours = (prodTimeMs / (1000 * 60 * 60)).toFixed(2);
+                        
+                        console.log(`\n📊 Progress Update (${totalDocumentsInserted.toLocaleString()} documents inserted):`);
+                        console.log(`   Time remaining for ${NUM_USERS_TO_GENERATE.toLocaleString()} users: ~${estimatedTimeLeftMinutes} minutes`);
+                        console.log(`   Estimated time for ${NUM_USERS_PRODUCTION.toLocaleString()} users: ~${prodTimeHours} hours\n`);
+                    }
                 }
             }
         }
 
         // Insert any remaining documents in the last batch
         if (bucketBatch.length > 0) {
-            await communicationsCollection.insertMany(bucketBatch);
+            await communicationsCollection.insertMany(bucketBatch, {
+                ordered: false,  // Allow parallel execution
+                writeConcern: { w: 1, j: false }  // Optimize write concern
+            });
             console.log(`   ... Inserted the final batch of ${bucketBatch.length} documents.`);
         }
 
@@ -165,6 +201,39 @@ async function setupAndSeedDatabase() {
         const durationSeconds = ((endTime - startTime) / 1000).toFixed(2);
 
         console.log("\n✅ Data generation complete!");
+
+        // Create indexes after upload for optimal performance
+        console.log("\n🔧 Creating indexes (this may take a few minutes for large datasets)...");
+        
+        await communicationsCollection.createIndex({ "user.id": 1, day: 1 });
+        console.log("-> Created primary compound index for user/day lookups.");
+
+        await communicationsCollection.createIndex({
+            "day": 1,
+            "events.metadata.template_id": 1,
+            "events.metadata.tracking_id": 1,
+            "events.dispatch_time": 1
+        });
+        console.log("-> Created compound index for campaign lookups (distinct).");
+
+        await communicationsCollection.createIndex({
+            "user.id": 1,
+            "events.dispatch_time": 1,
+            "events.metadata.template_id": 1,
+            "events.metadata.tracking_id": 1,
+        });
+        console.log("-> Created compound index on event details for status updates.");
+
+        await communicationsCollection.createIndex({ "events.metadata.template_id": 1 });
+        console.log("-> Created multikey index for template ID lookups.");
+        
+        await communicationsCollection.createIndex({ "events.metadata.tracking_id": 1 });
+        console.log("-> Created multikey index for tracking ID lookups.");
+
+        await communicationsCollection.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 });
+        console.log("-> Created TTL index on communications.");
+        
+        console.log("\n✅ All indexes created successfully!");
 
         console.log(`\n⏱️ Performance & Estimation:`);
         console.log(`   - Time to generate for ${NUM_USERS_TO_GENERATE.toLocaleString('en-US')} users: ${durationSeconds} seconds.`);
