@@ -24,7 +24,7 @@ function askQuestion(question) {
 // Configuration - Statistically sound sample sizes
 const BENCHMARK_CONFIG = {
     warmupRequests: 10,         // Warm up JIT, connection pools, etc.
-    benchmarkRequests: 1000,    // Reasonable sample size for quick results
+    benchmarkRequests: 10000,    // Reasonable sample size for quick results
     concurrency: 10,            // Moderate concurrency
     host: 'http://localhost:5001', // Production port
     iterations: 3,              // Multiple iterations to account for variance
@@ -72,6 +72,30 @@ async function getExistingTestData() {
         const dayDate = new Date(document.day);
         const dateString = dayDate.toISOString().split('T')[0]; // YYYY-MM-DD format
 
+        // Get a lastUserId for subsequent load testing
+        const distinctUsersResult = await db.collection('communications').aggregate([
+            {
+                $match: {
+                    day: document.day,
+                    events: {
+                        $elemMatch: {
+                            "dispatch_time": {
+                                $gte: new Date(new Date(firstEvent.dispatch_time).setMinutes(0, 0, 0)),
+                                $lt: new Date(new Date(firstEvent.dispatch_time).setMinutes(59, 59, 999))
+                            },
+                            "metadata.template_id": firstEvent.metadata.template_id,
+                            "metadata.tracking_id": firstEvent.metadata.tracking_id
+                        }
+                    }
+                }
+            },
+            { $group: { _id: "$user.id" } },
+            { $sort: { _id: 1 } },
+            { $limit: 10 }
+        ]).toArray();
+
+        const lastUserId = distinctUsersResult.length > 5 ? distinctUsersResult[5]._id : null;
+
         return {
             userId: document.user.id,
             userType: document.user.type,
@@ -81,6 +105,7 @@ async function getExistingTestData() {
             date: dateString,
             hour: new Date(firstEvent.dispatch_time).getHours(),
             dispatch_time: firstEvent.dispatch_time,
+            lastUserId: lastUserId, // For subsequent load testing
             fullDocument: document // Include the entire document
         };
     } finally {
@@ -97,13 +122,17 @@ async function getApiEndpoints(testData) {
             method: 'GET',
             url: `/api/communications/user/${testData.userId}?date=${testData.date}`
         },
-        'Campaign Distinct Users': {
+        'Get Distinct Users for a Campaign': {
             method: 'GET',
-            url: `/api/campaigns/distinct-users?date=${testData.date}&hour=${testData.hour}&templateId=${testData.templateId}&trackingId=${testData.trackingId}&page=1`
+            url: `/api/campaigns/distinct-users?date=${testData.date}&hour=${testData.hour}&templateId=${testData.templateId}&trackingId=${testData.trackingId}&lastUserId=${testData.lastUserId}`
         },
         'Get Templates': {
             method: 'GET',
             url: '/api/templates'
+        },
+        'Get Tracking IDs': {
+            method: 'GET',
+            url: '/api/tracking-ids'
         }
     };
 }
