@@ -178,6 +178,53 @@ npm run prod
 
 You should now see the "Dumbledore - SmartComms" running in your browser.
 
+## 7. Performance Timing Breakdown
+
+The application includes comprehensive timing tracking to help identify performance bottlenecks across the full stack. Here's what each timing measurement represents:
+
+### Database Layer (MongoDB)
+- **Query execution time** - Time spent executing MongoDB operations (`findOne`, `aggregate`, `updateOne`, etc.)
+- **Index lookups and scanning** - Time spent traversing indexes and scanning documents
+- **Document retrieval** - Time spent retrieving documents from disk/memory
+- **Aggregation processing** - Time spent processing aggregation pipelines (like `$sample` for random results)
+
+### Backend Processing (Node.js/Express)
+- **JSON parsing/serialization** - Converting MongoDB results to JSON responses
+- **Request validation** - Checking required parameters and parsing query strings
+- **Date/time processing** - Converting date strings to Date objects and timezone handling
+- **Object construction** - Building MongoDB query objects and update operations
+- **Response header setting** - Adding timing and CORS headers
+- **Network I/O** - Receiving request body and sending response data
+- **JavaScript execution** - Function calls, variable assignments, and business logic
+
+### Frontend Processing (React)
+- **Network request overhead** - `fetch()` call setup and HTTP connection establishment
+- **JSON parsing** - Converting API responses to JavaScript objects
+- **State updates** - React `setState` calls that trigger component re-renders
+- **DOM updates** - Re-rendering components when state changes
+- **Event handling** - Processing user interactions (clicks, form submissions)
+- **JavaScript execution** - Function calls, array operations, and string manipulation
+- **React reconciliation** - Virtual DOM diffing and real DOM updates
+
+### Timing Modes
+
+**Development Mode:**
+- Shows detailed breakdown: Database + Backend + Frontend timing
+- Helps identify which layer is causing performance issues
+- Full error logging and debug information
+
+**Production Mode:**
+- Shows optimized end-to-end total latency only
+- Minimal overhead for maximum performance
+- Clean interface without debug details
+
+### Using Timing Data
+
+The separate timing measurements help identify bottlenecks:
+- **High database time** → Query optimization or indexing needed
+- **High backend processing** → Server-side logic optimization required  
+- **High frontend time** → Client-side rendering or state management issues
+
 ---
 ## Summary of Commands
 
