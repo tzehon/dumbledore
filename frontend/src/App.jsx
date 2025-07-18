@@ -221,7 +221,7 @@ export default function App() {
   useEffect(() => {
     if (!initialLoadDone.current) return;
 
-    if (searchedUserId) {
+    if (searchedUserId && searchedUserId.trim() !== '') {
         fetchCommunications(searchedUserId, selectedDate, true);
     }
   }, [searchedUserId, selectedDate, fetchCommunications]);
@@ -240,7 +240,53 @@ export default function App() {
     }
   }
 
+  const handleRandomResult = () => {
+    setError(null);
+    setIsLoadingComms(true);
+    setQueryDuration(null);
+
+    const requestKey = `fetch-random-${Date.now()}`;
+    const { finishTracking } = trackApiCall(requestKey, 'read', 'Fetch random communication result', true);
+
+    fetch(`${API_BASE_URL}/communications/random`)
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+        return res.json().then(data => ({ data, response: res }));
+      })
+      .then(({ data, response }) => {
+        setCommunications(data.events || data);
+        // Populate the lookup field with the returned user ID and date
+        if (data.userId) {
+          setLookupUserId(data.userId.toString());
+          setSearchedUserId(data.userId.toString());
+        } else {
+          setSearchedUserId('');
+        }
+        if (data.date) {
+          setSelectedDate(data.date);
+        }
+        const duration = finishTracking(true, response);
+        setQueryDuration(duration);
+      })
+      .catch(error => {
+        if (!IS_PRODUCTION) {
+          console.error("Fetch random communications error:", error);
+        }
+        setError("Failed to fetch random communications. Please check the server connection.");
+        finishTracking(false);
+      })
+      .finally(() => {
+        setIsLoadingComms(false);
+      });
+  }
+
   const handleUpdateStatus = (comm, newStatus) => {
+    // Don't allow status updates if we don't have a valid user ID (e.g., after random search)
+    if (!searchedUserId || searchedUserId === 'random') {
+      setError("Status updates are not available for random results. Please search for a specific user first.");
+      return;
+    }
+    
     setError(null);
     const payload = {
       userId: parseInt(searchedUserId),
@@ -382,6 +428,7 @@ export default function App() {
             lookupUserId={lookupUserId}
             setLookupUserId={setLookupUserId}
             onSearch={handleSearch}
+            onRandomResult={handleRandomResult}
             queryDuration={queryDuration}
             requestTimings={requestTimings}
           />
@@ -439,7 +486,7 @@ function Header({ setView, currentView }) {
   );
 }
 
-function Dashboard({ communications, isLoadingComms, onUpdateStatus, onSendNewComm, onReplaceComms, selectedDate, onDateChange, lookupUserId, setLookupUserId, onSearch, queryDuration, requestTimings }) {
+function Dashboard({ communications, isLoadingComms, onUpdateStatus, onSendNewComm, onReplaceComms, selectedDate, onDateChange, lookupUserId, setLookupUserId, onSearch, onRandomResult, queryDuration, requestTimings }) {
   return (
     <div>
       <UserLookup
@@ -447,6 +494,7 @@ function Dashboard({ communications, isLoadingComms, onUpdateStatus, onSendNewCo
         setLookupUserId={setLookupUserId}
         onSendNewComm={onSendNewComm}
         onSearch={onSearch}
+        onRandomResult={onRandomResult}
         requestTimings={requestTimings}
       />
       <CommunicationsLog
@@ -464,7 +512,7 @@ function Dashboard({ communications, isLoadingComms, onUpdateStatus, onSendNewCo
   );
 }
 
-function UserLookup({ lookupUserId, setLookupUserId, onSendNewComm, onSearch, requestTimings }) {
+function UserLookup({ lookupUserId, setLookupUserId, onSendNewComm, onSearch, onRandomResult, requestTimings }) {
     const [count, setCount] = useState(1);
 
     const handleKeyDown = (e) => {
@@ -488,6 +536,9 @@ function UserLookup({ lookupUserId, setLookupUserId, onSendNewComm, onSearch, re
                 />
                 <button onClick={onSearch} className="bg-gray-800 text-white px-4 py-2 rounded-lg font-semibold hover:bg-gray-900 transition-colors shadow">
                     Search
+                </button>
+                <button onClick={onRandomResult} className="bg-purple-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-purple-700 transition-colors shadow">
+                    Random
                 </button>
             </div>
             <div className="flex items-center gap-2">

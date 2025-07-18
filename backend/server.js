@@ -356,6 +356,35 @@ app.get('/api/tracking-ids', async (req, res) => {
     res.json(trackingIds.sort());
 });
 
+// GET /api/communications/random
+// Get a random communication result
+app.get('/api/communications/random', async (req, res) => {
+    const db = await connectToDbForServer();
+    
+    if (DEBUG_MODE) {
+        console.log("\n--- Backend Query Log (Random Communications) ---");
+        console.log("db.collection('communications').aggregate([{ $sample: { size: 1 } }])");
+    }
+    
+    const dbStartTime = performance.now();
+    const pipeline = [{ $sample: { size: 1 } }];
+    const randomResults = await db.collection('communications').aggregate(pipeline).toArray();
+    const dbEndTime = performance.now();
+    
+    addTimingData(req, res, dbStartTime, dbEndTime);
+    
+    if (randomResults.length > 0) {
+        const randomDoc = randomResults[0];
+        res.json({
+            userId: randomDoc.user?.id || null,
+            date: randomDoc.day ? randomDoc.day.toISOString().split('T')[0] : null,
+            events: randomDoc.events || []
+        });
+    } else {
+        res.json({ userId: null, date: null, events: [] });
+    }
+});
+
 
 // --- Server Initialization ---
 async function startServer() {
