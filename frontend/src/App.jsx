@@ -610,11 +610,12 @@ function CampaignView({ templates, trackingIds, isLoadingDropdowns, requestTimin
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
     const [campaignQueryDuration, setCampaignQueryDuration] = useState(null);
-    // --- CHANGE: New state for Load More pattern ---
+    // --- CHANGE: New state for cursor-based pagination ---
     const [page, setPage] = useState(1);
     const [totalPages, setTotalPages] = useState(0);
     const [totalUsers, setTotalUsers] = useState(0);
     const [hasMore, setHasMore] = useState(false);
+    const [lastUserId, setLastUserId] = useState(null);
     const [campaignTimings, setCampaignTimings] = useState({});
 
     // Helper function to track API request timing for campaign
@@ -721,15 +722,21 @@ function CampaignView({ templates, trackingIds, isLoadingDropdowns, requestTimin
         }
     }, [isLoadingDropdowns, templates, trackingIds]);
 
-    const handleSearch = useCallback((newPage = 1) => {
+    const handleSearch = useCallback((isLoadMore = false, currentLastUserId = null) => {
         setIsLoading(true);
         setCampaignQueryDuration(null);
         setError(null);
 
-        const requestKey = `campaign-search-${params.date}-${params.hour}-${params.templateId}-${params.trackingId}-page${newPage}`;
+        const requestKey = `campaign-search-${params.date}-${params.hour}-${params.templateId}-${params.trackingId}-${isLoadMore ? 'loadmore' : 'first'}`;
         const { finishTracking } = trackCampaignApiCall(requestKey, 'read', `Campaign search for ${params.templateId} on ${params.date} hour ${params.hour}`);
 
-        const query = { ...params, page: newPage };
+        const query = { ...params };
+        const useLastUserId = currentLastUserId || lastUserId;
+        if (isLoadMore && useLastUserId) {
+            query.lastUserId = useLastUserId;
+        }
+        
+        
         const queryString = new URLSearchParams(query).toString();
 
         fetch(`${API_BASE_URL}/campaigns/distinct-users?${queryString}`)
@@ -738,17 +745,24 @@ function CampaignView({ templates, trackingIds, isLoadingDropdowns, requestTimin
                 return res.json().then(data => ({ data, response: res }));
             })
             .then(({ data, response }) => {
-                if (newPage === 1) {
-                    // New search - replace data
-                    setDistinctUsers(data.data);
-                } else {
+                
+                if (isLoadMore) {
                     // Load more - append data
                     setDistinctUsers(prev => [...prev, ...data.data]);
+                    setPage(prev => prev + 1);
+                } else {
+                    // New search - replace data
+                    setDistinctUsers(data.data);
+                    setPage(1);
                 }
                 setTotalUsers(data.total);
                 setTotalPages(data.totalPages);
-                setPage(data.page);
                 setHasMore(data.hasMore);
+                setLastUserId(data.lastUserId);
+                
+                // Store the load more function with the current lastUserId
+                window.currentLoadMore = () => handleSearch(true, data.lastUserId);
+                
                 const duration = finishTracking(true, response);
                 setCampaignQueryDuration(duration);
             })
@@ -757,8 +771,11 @@ function CampaignView({ templates, trackingIds, isLoadingDropdowns, requestTimin
                   console.error("Campaign search error:", err);
                 }
                 setError("Failed to search for campaign users.");
-                setDistinctUsers([]);
-                setTotalUsers(0);
+                if (!isLoadMore) {
+                    setDistinctUsers([]);
+                    setTotalUsers(0);
+                    setLastUserId(null);
+                }
                 setHasMore(false);
                 finishTracking(false);
             })
@@ -767,10 +784,57 @@ function CampaignView({ templates, trackingIds, isLoadingDropdowns, requestTimin
             });
     }, [params]);
 
+    const handleRandomSearch = () => {
+        setIsLoading(true);
+        setCampaignQueryDuration(null);
+        setError(null);
+        setLastUserId(null); // Reset cursor for new search
+
+        const requestKey = `campaign-random-${Date.now()}`;
+        const { finishTracking } = trackCampaignApiCall(requestKey, 'read', 'Random campaign search', true);
+
+        fetch(`${API_BASE_URL}/campaigns/random`)
+            .then(res => {
+                if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+                return res.json().then(data => ({ data, response: res }));
+            })
+            .then(({ data, response }) => {
+                if (data.searchParams) {
+                    // Update the form parameters with the random search results
+                    setParams(data.searchParams);
+                    setDistinctUsers(data.distinctUsers);
+                    setTotalUsers(data.distinctUsers.length);
+                    setTotalPages(1);
+                    setPage(1);
+                    setHasMore(false);
+                } else {
+                    setDistinctUsers([]);
+                    setTotalUsers(0);
+                    setHasMore(false);
+                }
+                const duration = finishTracking(true, response);
+                setCampaignQueryDuration(duration);
+            })
+            .catch(err => {
+                if (!IS_PRODUCTION) {
+                  console.error("Random campaign search error:", err);
+                }
+                setError("Failed to fetch random campaign data.");
+                setDistinctUsers([]);
+                setTotalUsers(0);
+                setHasMore(false);
+                finishTracking(false);
+            })
+            .finally(() => {
+                setIsLoading(false);
+            });
+    };
+
     const handleFormSubmit = (e) => {
         e.preventDefault();
         setPage(1); // Reset to first page on new search
-        handleSearch(1);
+        setLastUserId(null); // Reset cursor for new search
+        handleSearch(false);
     }
 
     const handleChange = (e) => {
@@ -781,7 +845,7 @@ function CampaignView({ templates, trackingIds, isLoadingDropdowns, requestTimin
         <div className="bg-white p-6 rounded-lg shadow">
             <h2 className="text-xl font-bold text-gray-800 mb-4">Find Distinct Users for Campaign (Req D)</h2>
             {error && <ErrorMessage message={error} />}
-            <form onSubmit={handleFormSubmit} className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end mb-6">
+            <form onSubmit={handleFormSubmit} className="grid grid-cols-1 md:grid-cols-6 gap-4 items-end mb-6">
                 <div>
                     <label className="block text-sm font-medium text-gray-600">Date</label>
                     <input type="date" name="date" value={params.date} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"/>
@@ -802,7 +866,10 @@ function CampaignView({ templates, trackingIds, isLoadingDropdowns, requestTimin
                         {isLoadingDropdowns ? <option>Loading...</option> : trackingIds.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                 </div>
-                <button type="submit" className="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 transition-colors shadow h-10">Search</button>
+                <div className="flex gap-2">
+                    <button type="submit" className="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 transition-colors shadow h-10">Search</button>
+                    <button type="button" onClick={handleRandomSearch} className="bg-purple-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-purple-700 transition-colors shadow h-10">Random</button>
+                </div>
             </form>
             <div>
                 {isLoading && <p>Loading results...</p>}
@@ -816,7 +883,7 @@ function CampaignView({ templates, trackingIds, isLoadingDropdowns, requestTimin
                             <div className="flex items-center gap-2">
                                 {hasMore && (
                                     <button 
-                                        onClick={() => handleSearch(page + 1)} 
+                                        onClick={() => window.currentLoadMore && window.currentLoadMore()} 
                                         disabled={isLoading} 
                                         className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
                                     >

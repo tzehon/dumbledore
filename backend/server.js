@@ -219,7 +219,7 @@ app.put('/api/communications/status', async (req, res) => {
 // Requirement (D): Get Distinct Users for Campaign by Hour
 app.get('/api/campaigns/distinct-users', async (req, res) => {
     const db = await connectToDbForServer();
-    const { date, hour, templateId, trackingId, page = 1 } = req.query;
+    const { date, hour, templateId, trackingId, lastUserId } = req.query;
     const PAGE_SIZE = 10;
 
     if (!date || !hour || !templateId || !trackingId) {
@@ -247,17 +247,18 @@ app.get('/api/campaigns/distinct-users', async (req, res) => {
         }
     };
 
-    // Optimized pipeline without expensive count operation
+    // Optimized pipeline with cursor-based pagination
     const pipeline = [
         matchStage,
         { $group: { _id: "$user.id" } },
         { $sort: { _id: 1 } },
-        { $skip: (page - 1) * PAGE_SIZE },
+        ...(lastUserId ? [{ $match: { _id: { $gt: parseInt(lastUserId) } } }] : []),
         { $limit: PAGE_SIZE + 1 } // Get one extra to check if more exists
     ];
 
     if (DEBUG_MODE) {
         console.log("\n--- Backend Query Log (Req D) ---");
+        console.log(`lastUserId parameter: ${lastUserId}`);
         console.log(`db.collection('communications').aggregate(`, JSON.stringify(pipeline, null, 2), ")");
         await logAggregationPlan(db, 'communications', [matchStage]);
     }
@@ -274,12 +275,19 @@ app.get('/api/campaigns/distinct-users', async (req, res) => {
     // Remove the extra result if we have more than PAGE_SIZE
     const data = results.slice(0, PAGE_SIZE).map(doc => doc._id);
 
+    if (DEBUG_MODE) {
+        console.log(`Results found: ${results.length}, hasMore: ${hasMore}`);
+        console.log(`First few results: ${results.slice(0, 3).map(r => r._id).join(', ')}`);
+        console.log(`Returning lastUserId: ${data.length > 0 ? data[data.length - 1] : null}`);
+    }
+
     res.json({
         data,
         total: -1, // Unknown total (not calculated for performance)
-        page: parseInt(page),
+        page: lastUserId ? -1 : 1, // Page number not meaningful with cursor pagination
         totalPages: -1, // Unknown total pages
-        hasMore: hasMore
+        hasMore: hasMore,
+        lastUserId: data.length > 0 ? data[data.length - 1] : null // Cursor for next page
     });
 });
 
@@ -382,6 +390,83 @@ app.get('/api/communications/random', async (req, res) => {
         });
     } else {
         res.json({ userId: null, date: null, events: [] });
+    }
+});
+
+// GET /api/campaigns/random
+// Get a random campaign result with distinct users
+app.get('/api/campaigns/random', async (req, res) => {
+    const db = await connectToDbForServer();
+    
+    if (DEBUG_MODE) {
+        console.log("\n--- Backend Query Log (Random Campaign) ---");
+        console.log("db.collection('communications').aggregate([{ $sample: { size: 1 } }, { $unwind: '$events' }, { $sample: { size: 1 } }])");
+    }
+    
+    const dbStartTime = performance.now();
+    
+    // Get a random document, then a random event from that document
+    const pipeline = [
+        { $sample: { size: 1 } },
+        { $unwind: '$events' },
+        { $sample: { size: 1 } }
+    ];
+    
+    const randomResults = await db.collection('communications').aggregate(pipeline).toArray();
+    const dbEndTime = performance.now();
+    
+    addTimingData(req, res, dbStartTime, dbEndTime);
+    
+    if (randomResults.length > 0) {
+        const randomEvent = randomResults[0];
+        const eventDispatchTime = new Date(randomEvent.events.dispatch_time);
+        
+        // Extract the hour from the dispatch time
+        const hour = eventDispatchTime.getUTCHours();
+        
+        // Create search parameters from the random event
+        const searchParams = {
+            date: randomEvent.day.toISOString().split('T')[0],
+            hour: hour.toString(),
+            templateId: randomEvent.events.metadata.template_id,
+            trackingId: randomEvent.events.metadata.tracking_id
+        };
+        
+        // Now find distinct users for this campaign criteria
+        const startOfDay = new Date(randomEvent.day);
+        startOfDay.setUTCHours(0, 0, 0, 0);
+        
+        const startOfHour = new Date(randomEvent.day);
+        startOfHour.setUTCHours(hour, 0, 0, 0);
+        
+        const endOfHour = new Date(startOfHour.getTime() + 60 * 60 * 1000);
+        
+        const distinctUsersPipeline = [
+            {
+                $match: {
+                    day: startOfDay,
+                    events: {
+                        $elemMatch: {
+                            "dispatch_time": { $gte: startOfHour, $lt: endOfHour },
+                            "metadata.template_id": searchParams.templateId,
+                            "metadata.tracking_id": searchParams.trackingId
+                        }
+                    }
+                }
+            },
+            { $group: { _id: "$user.id" } },
+            { $sort: { _id: 1 } },
+            { $limit: 10 }
+        ];
+        
+        const distinctUsers = await db.collection('communications').aggregate(distinctUsersPipeline).toArray();
+        
+        res.json({
+            searchParams,
+            distinctUsers: distinctUsers.map(doc => doc._id)
+        });
+    } else {
+        res.json({ searchParams: null, distinctUsers: [] });
     }
 });
 
