@@ -12,7 +12,7 @@ function askQuestion(question) {
         input: process.stdin,
         output: process.stdout
     });
-    
+
     return new Promise((resolve) => {
         rl.question(question, (answer) => {
             rl.close();
@@ -45,33 +45,33 @@ const SETUP_DATA_RANGES = {
 async function getExistingTestData() {
     const { MongoClient } = require('mongodb');
     require('dotenv').config();
-    
+
     const MONGO_URI = process.env.MONGO_URI;
     const DB_NAME = process.env.DB_NAME;
-    
+
     if (!MONGO_URI || !DB_NAME) {
         throw new Error('Missing MONGO_URI or DB_NAME in environment variables. Please check your .env file.');
     }
-    
+
     const client = new MongoClient(MONGO_URI);
-    
+
     try {
         await client.connect();
         const db = client.db(DB_NAME);
-        
+
         // Get one existing document with events
         const document = await db.collection('communications').findOne({
             events: { $exists: true, $ne: [] }
         });
-        
+
         if (!document || !document.events || document.events.length === 0) {
             throw new Error('No communication documents found in database. Please run setup.js first.');
         }
-        
+
         const firstEvent = document.events[0];
         const dayDate = new Date(document.day);
         const dateString = dayDate.toISOString().split('T')[0]; // YYYY-MM-DD format
-        
+
         return {
             userId: document.user.id,
             userType: document.user.type,
@@ -90,18 +90,18 @@ async function getExistingTestData() {
 
 // Test endpoints based on PDF requirements - dynamically generated
 async function getApiEndpoints(testData) {
-    
-    
+
+
     return {
-        'Req B - Get Communications (User/Day)': {
+        'Get Communications (User/Day)': {
             method: 'GET',
             url: `/api/communications/user/${testData.userId}?date=${testData.date}`
         },
-        'Req D - Campaign Distinct Users': {
+        'Campaign Distinct Users': {
             method: 'GET',
             url: `/api/campaigns/distinct-users?date=${testData.date}&hour=${testData.hour}&templateId=${testData.templateId}&trackingId=${testData.trackingId}&page=1`
         },
-        'Req E - Get Templates': {
+        'Get Templates': {
             method: 'GET',
             url: '/api/templates'
         }
@@ -123,15 +123,15 @@ async function makeRequest(endpoint, config) {
     }
 
     const startTime = performance.now();
-    
+
     try {
         const response = await fetch(url, options);
         const endTime = performance.now();
-        
+
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-        
+
         return {
             latency: Math.round(endTime - startTime),
             success: true
@@ -150,14 +150,14 @@ async function makeRequest(endpoint, config) {
 function calculateStats(latencies) {
     const sorted = [...latencies].sort((a, b) => a - b);
     const length = sorted.length;
-    
+
     // Calculate mean
     const mean = sorted.reduce((a, b) => a + b, 0) / length;
-    
+
     // Calculate standard deviation
     const variance = sorted.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / length;
     const stdDev = Math.sqrt(variance);
-    
+
     // Calculate percentiles
     const percentiles = {
         p50: sorted[Math.floor(length * 0.5)],
@@ -170,53 +170,53 @@ function calculateStats(latencies) {
         avg: Math.round(mean),
         stdDev: Math.round(stdDev * 100) / 100
     };
-    
+
     // Calculate confidence intervals (95% confidence level)
     const marginOfError = 1.96 * (stdDev / Math.sqrt(length));
     percentiles.confidenceInterval = {
         lower: Math.round(mean - marginOfError),
         upper: Math.round(mean + marginOfError)
     };
-    
+
     return percentiles;
 }
 
 // Run benchmark for a single endpoint with multiple iterations
 async function benchmarkEndpoint(name, endpoint) {
     console.log(`\n🔥 Benchmarking: ${name}`);
-    
+
     const allIterationResults = [];
-    
+
     for (let iteration = 1; iteration <= BENCHMARK_CONFIG.iterations; iteration++) {
         console.log(`  📊 Iteration ${iteration}/${BENCHMARK_CONFIG.iterations}`);
-        
+
         // Warmup
         console.log(`    Warming up... (${BENCHMARK_CONFIG.warmupRequests} requests)`);
         for (let i = 0; i < BENCHMARK_CONFIG.warmupRequests; i++) {
             await makeRequest(endpoint, BENCHMARK_CONFIG);
         }
-        
+
         // Benchmark
         console.log(`    Running benchmark... (${BENCHMARK_CONFIG.benchmarkRequests} requests)`);
         const latencies = [];
         const errors = [];
-        
+
         const startTime = performance.now();
-        
+
         // Run requests with controlled concurrency
         const batchSize = BENCHMARK_CONFIG.concurrency;
         const totalBatches = Math.ceil(BENCHMARK_CONFIG.benchmarkRequests / batchSize);
-        
+
         for (let batch = 0; batch < totalBatches; batch++) {
             const batchPromises = [];
             const requestsInBatch = Math.min(batchSize, BENCHMARK_CONFIG.benchmarkRequests - (batch * batchSize));
-            
+
             for (let i = 0; i < requestsInBatch; i++) {
                 batchPromises.push(makeRequest(endpoint, BENCHMARK_CONFIG));
             }
-            
+
             const batchResults = await Promise.all(batchPromises);
-            
+
             batchResults.forEach(result => {
                 if (result.success) {
                     latencies.push(result.latency);
@@ -224,26 +224,26 @@ async function benchmarkEndpoint(name, endpoint) {
                     errors.push(result.error);
                 }
             });
-            
+
             // Progress indicator
             if (batch % 20 === 0) {
                 const progress = Math.round((batch / totalBatches) * 100);
                 process.stdout.write(`\r    Progress: ${progress}%`);
             }
         }
-        
+
         const endTime = performance.now();
         const totalTime = Math.round(endTime - startTime);
-        
+
         console.log(`\r    Completed in ${totalTime}ms`);
-        
+
         if (errors.length > 0) {
             console.log(`    ⚠️  ${errors.length} errors occurred`);
         }
-        
+
         const stats = calculateStats(latencies);
         const successRate = ((latencies.length / BENCHMARK_CONFIG.benchmarkRequests) * 100).toFixed(1);
-        
+
         allIterationResults.push({
             ...stats,
             successRate: parseFloat(successRate),
@@ -252,7 +252,7 @@ async function benchmarkEndpoint(name, endpoint) {
             throughput: Math.round(BENCHMARK_CONFIG.benchmarkRequests / (totalTime / 1000))
         });
     }
-    
+
     // Calculate aggregate statistics across all iterations
     const aggregateStats = {
         p50: Math.round(allIterationResults.reduce((sum, r) => sum + r.p50, 0) / allIterationResults.length),
@@ -269,7 +269,7 @@ async function benchmarkEndpoint(name, endpoint) {
         totalSamples: BENCHMARK_CONFIG.benchmarkRequests * BENCHMARK_CONFIG.iterations,
         iterations: BENCHMARK_CONFIG.iterations
     };
-    
+
     return aggregateStats;
 }
 
@@ -277,20 +277,20 @@ async function benchmarkEndpoint(name, endpoint) {
 async function getCollectionInfo() {
     console.log('📊 Please provide collection context:');
     console.log('');
-    
+
     const docCountInput = await askQuestion('Number of documents in collection: ');
     const serverTier = await askQuestion('Server tier (e.g., "M60" or "R60"): ');
-    
+
     const docCount = parseInt(docCountInput.replace(/,/g, ''));
-    
+
     if (isNaN(docCount) || docCount <= 0) {
         throw new Error('Invalid document count. Please enter a positive number.');
     }
-    
+
     console.log('');
     console.log(`✅ Collection context: ${docCount.toLocaleString()} documents on ${serverTier}`);
     console.log('');
-    
+
     return {
         documents: docCount,
         serverTier: serverTier
@@ -300,10 +300,10 @@ async function getCollectionInfo() {
 // Generate markdown report
 function generateMarkdownReport(results, collectionStats, timestamp) {
     const lines = [];
-    
+
     lines.push('# Performance Benchmark Report');
     lines.push('');
-    
+
     // Collection context
     lines.push('## Test Environment');
     lines.push('');
@@ -314,17 +314,17 @@ function generateMarkdownReport(results, collectionStats, timestamp) {
     const totalSamples = Object.values(results)[0].totalSamples;
     lines.push(`| Sample Size | ${totalSamples.toLocaleString()} requests per endpoint |`);
     lines.push('');
-    
+
     // Performance results
     lines.push('## API Performance Results');
     lines.push('');
     lines.push('| Requirement | P50 (Median) | P90 | P95 | P99 | Avg | StdDev |');
     lines.push('|-------------|--------------|-----|-----|-----|-----|--------|');
-    
+
     Object.entries(results).forEach(([name, stats]) => {
         lines.push(`| ${name} | ${stats.p50}ms | ${stats.p90}ms | ${stats.p95}ms | ${stats.p99}ms | ${stats.avg}ms | ${stats.stdDev}ms |`);
     });
-    
+
     return lines.join('\n');
 }
 
@@ -332,17 +332,17 @@ function generateMarkdownReport(results, collectionStats, timestamp) {
 async function runBenchmark() {
     console.log('🚀 Backend API Performance Benchmark');
     console.log('=====================================');
-    
+
     try {
         // Check if production server is running
         const testResponse = await fetch(`${BENCHMARK_CONFIG.host}/api/templates`);
         if (!testResponse.ok) {
             throw new Error('Backend production server not running. Please start with: npm run prod');
         }
-        
+
         // Get collection context from user input
         const collectionStats = await getCollectionInfo();
-        
+
         console.log(`📊 BENCHMARK CONFIGURATION:`);
         console.log(`   Sample Size: ${BENCHMARK_CONFIG.benchmarkRequests.toLocaleString()} requests per endpoint`);
         console.log(`   Iterations: ${BENCHMARK_CONFIG.iterations}`);
@@ -351,48 +351,48 @@ async function runBenchmark() {
         console.log(`   Confidence Level: ${(BENCHMARK_CONFIG.confidenceLevel * 100)}%`);
         console.log(`   Target: Backend only (no frontend required)`);
         console.log('');
-        
+
         // Get test data and print it
         const testData = await getExistingTestData();
         console.log('📋 TEST DATA BEING USED (full document):');
         console.log(JSON.stringify(testData.fullDocument, null, 2));
         console.log('');
-        
+
         // Run benchmarks
         const results = {};
         const API_ENDPOINTS = await getApiEndpoints(testData);
-        
+
         for (const [name, endpoint] of Object.entries(API_ENDPOINTS)) {
             results[name] = await benchmarkEndpoint(name, endpoint);
         }
-        
+
         // Generate report
         const timestamp = new Date().toISOString();
         const report = generateMarkdownReport(results, collectionStats, timestamp);
-        
+
         // Save report to file with dynamic filename
         const sanitizedTier = collectionStats.serverTier.replace(/[^a-zA-Z0-9]/g, '_');
         const numDocs = collectionStats.documents;
         const filename = `${sanitizedTier}_${numDocs}.md`;
         const reportPath = path.join(__dirname, filename);
         fs.writeFileSync(reportPath, report);
-        
+
         console.log('\n✅ Benchmark completed!');
         console.log(`📄 Report saved to: ${reportPath}`);
-        
+
         console.log('\n📋 RESULTS SUMMARY:');
         console.log('==================');
         console.log(`🗄️  Database: ${collectionStats.documents.toLocaleString()} documents`);
         console.log('');
-        
+
         Object.entries(results).forEach(([name, stats]) => {
             console.log(`${name}:`);
             console.log(`  P50: ${stats.p50}ms | P90: ${stats.p90}ms | P95: ${stats.p95}ms | P99: ${stats.p99}ms`);
         });
-        
+
         console.log('');
         console.log(`📊 Sample Size: ${(BENCHMARK_CONFIG.benchmarkRequests * BENCHMARK_CONFIG.iterations).toLocaleString()} per endpoint`);
-        
+
     } catch (error) {
         console.error('❌ Benchmark failed:', error.message);
         process.exit(1);
