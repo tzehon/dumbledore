@@ -247,11 +247,32 @@ npm run setup:append # Add more users to existing data
 npm run stats
 ```
 
-**To run performance benchmark:**
+**To run performance benchmarks:**
+
+**HTTP + Database Benchmarking:**
 ```bash
-# In ./backend terminal (requires backend production server only)
+# Terminal 1: Start production server
+npm run prod
+
+# Terminal 2: Run HTTP benchmark  
 npm run benchmark
 ```
+
+**MongoDB-Only Benchmarking:**
+```bash
+# In ./backend terminal (no server needed)
+npm run benchmark:mongodb
+```
+
+**Available benchmark commands:**
+- `npm run benchmark` - Full HTTP + MongoDB timing (requires server running)
+- `npm run benchmark:mongodb` - Pure MongoDB timing only (no server needed)
+
+The MongoDB-only benchmark:
+- Connects directly to MongoDB (no Express server needed)
+- Measures pure database query performance  
+- Tests the same queries as the HTTP benchmark
+- Generates reports with `mongodb_` prefix
 
 **To run the app:**
 
