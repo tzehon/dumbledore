@@ -308,19 +308,26 @@ async function getCollectionInfo() {
     console.log('');
 
     const docCountInput = await askQuestion('Number of documents in collection: ');
+    const userCountInput = await askQuestion('Number of users in collection: ');
     const serverTier = await askQuestion('Server tier (e.g., "M60" or "R60"): ');
 
     const docCount = parseInt(docCountInput.replace(/,/g, ''));
+    const userCount = parseInt(userCountInput.replace(/,/g, ''));
 
     if (isNaN(docCount) || docCount <= 0) {
         throw new Error('Invalid document count. Please enter a positive number.');
     }
 
+    if (isNaN(userCount) || userCount <= 0) {
+        throw new Error('Invalid user count. Please enter a positive number.');
+    }
+
     console.log('');
-    console.log(`✅ Collection context: ${docCount.toLocaleString()} documents on ${serverTier}`);
+    console.log(`✅ Collection context: ${userCount.toLocaleString()} users, ${docCount.toLocaleString()} documents on ${serverTier}`);
     console.log('');
 
     return {
+        users: userCount,
         documents: docCount,
         serverTier: serverTier
     };
@@ -338,6 +345,7 @@ function generateMarkdownReport(results, collectionStats, timestamp) {
     lines.push('');
     lines.push('| Metric | Value |');
     lines.push('|--------|--------|');
+    lines.push(`| Users | ${collectionStats.users.toLocaleString()} |`);
     lines.push(`| Documents | ${collectionStats.documents.toLocaleString()} |`);
     lines.push(`| Server Tier | ${collectionStats.serverTier} |`);
     const totalSamples = Object.values(results)[0].totalSamples;
@@ -411,7 +419,8 @@ async function runBenchmark() {
 
         console.log('\n📋 RESULTS SUMMARY:');
         console.log('==================');
-        console.log(`🗄️  Database: ${collectionStats.documents.toLocaleString()} documents`);
+        console.log(`👥 Users: ${collectionStats.users.toLocaleString()}`);
+        console.log(`🗄️ Database: ${collectionStats.documents.toLocaleString()} documents`);
         console.log('');
 
         Object.entries(results).forEach(([name, stats]) => {

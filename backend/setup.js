@@ -60,20 +60,24 @@ async function setupAndSeedDatabase() {
             console.log("Append mode: Keeping existing collection and data...");
         }
 
-        // Drop all indexes (except _id) for maximum upload speed
-        console.log("Dropping existing indexes for maximum upload performance...");
-        try {
-            const indexes = await communicationsCollection.listIndexes().toArray();
-            for (const index of indexes) {
-                if (index.name !== '_id_') {
-                    await communicationsCollection.dropIndex(index.name);
-                    console.log(`-> Dropped index: ${index.name}`);
+        // Drop all indexes (except _id) for maximum upload speed (only in reset mode)
+        if (isResetMode) {
+            console.log("Dropping existing indexes for maximum upload performance...");
+            try {
+                const indexes = await communicationsCollection.listIndexes().toArray();
+                for (const index of indexes) {
+                    if (index.name !== '_id_') {
+                        await communicationsCollection.dropIndex(index.name);
+                        console.log(`-> Dropped index: ${index.name}`);
+                    }
                 }
+            } catch (e) {
+                console.log("-> No existing indexes to drop (collection may be new)");
             }
-        } catch (e) {
-            console.log("-> No existing indexes to drop (collection may be new)");
+            console.log("Database prepared for high-speed upload!");
+        } else {
+            console.log("Append mode: Keeping existing indexes for better performance...");
         }
-        console.log("Database prepared for high-speed upload!");
 
         // 2. Generate Data
         console.log(`\nGenerating data for ${NUM_USERS_TO_GENERATE.toLocaleString('en-US')} users...`);
