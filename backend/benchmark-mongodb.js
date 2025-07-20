@@ -185,7 +185,8 @@ const mongoQueries = {
         return {
             latency: Math.round(endTime - startTime),
             success: true,
-            resultCount: results.length
+            resultCount: results.length,
+            queryResult: results
         };
     },
 
@@ -276,6 +277,7 @@ async function benchmarkMongoQuery(name, queryFunc, testData) {
         console.log(`    Running benchmark... (${BENCHMARK_CONFIG.benchmarkRequests} requests)`);
         const latencies = [];
         const errors = [];
+        let lastResult = null;
 
         const startTime = performance.now();
 
@@ -300,6 +302,7 @@ async function benchmarkMongoQuery(name, queryFunc, testData) {
             batchResults.forEach(result => {
                 if (result.success) {
                     latencies.push(result.latency);
+                    lastResult = result.queryResult; // Capture the last successful result
                 } else {
                     errors.push(result.error);
                 }
@@ -323,6 +326,12 @@ async function benchmarkMongoQuery(name, queryFunc, testData) {
 
         const stats = calculateStats(latencies);
         const successRate = ((latencies.length / BENCHMARK_CONFIG.benchmarkRequests) * 100).toFixed(1);
+
+        // Print the last result from this iteration
+        if (lastResult) {
+            console.log(`    📊 Last result from iteration ${iteration}:`);
+            console.log(`       ${JSON.stringify(lastResult, null, 6)}`);
+        }
 
         allIterationResults.push({
             ...stats,
