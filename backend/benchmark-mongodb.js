@@ -188,12 +188,12 @@ const mongoQueries = {
         const endTime = performance.now();
 
         const totalLatency = Math.round(endTime - startTime);
-        
+
         let mongoOnlyLatency = 0;
         if (explainResult.stages && explainResult.stages[0] && explainResult.stages[0].$cursor) {
             mongoOnlyLatency = explainResult.stages[0].$cursor.executionStats?.executionTimeMillis || 0;
         } else {
-            mongoOnlyLatency = explainResult.stages ? 
+            mongoOnlyLatency = explainResult.stages ?
                 explainResult.stages.reduce((total, stage) => total + (stage.executionTimeMillisEstimate || 0), 0) :
                 explainResult.executionStats?.executionTimeMillis || 0;
         }
@@ -215,11 +215,11 @@ const mongoQueries = {
 
     'Get Templates': async (testData, printQuery = false) => {
         if (printQuery) {
-            console.log(`  🔍 Query: db.collection('communications').distinct('events.metadata.template_id', {}, { explain: true })`);
+            console.log(`  🔍 Query: db.collection('communications').distinct('events.metadata.template_id', {}, { explain: "executionStats" })`);
         }
 
         const startTime = performance.now();
-        const explainResult = await db.collection('communications').distinct('events.metadata.template_id', {}, { explain: true });
+        const explainResult = await db.collection('communications').distinct('events.metadata.template_id', {}, { explain: "executionStats" });
         const endTime = performance.now();
 
         const totalLatency = Math.round(endTime - startTime);
@@ -229,17 +229,17 @@ const mongoQueries = {
             latency: totalLatency,
             mongoOnlyLatency: mongoOnlyLatency,
             success: true,
-            resultCount: explainResult.executionStats?.totalDocsExamined || 0
+            resultCount: explainResult.executionStats?.nReturned || 0
         };
     },
 
     'Get Tracking IDs': async (testData, printQuery = false) => {
         if (printQuery) {
-            console.log(`  🔍 Query: db.collection('communications').distinct('events.metadata.tracking_id', {}, { explain: true })`);
+            console.log(`  🔍 Query: db.collection('communications').distinct('events.metadata.tracking_id', {}, { explain: "executionStats" })`);
         }
 
         const startTime = performance.now();
-        const explainResult = await db.collection('communications').distinct('events.metadata.tracking_id', {}, { explain: true });
+        const explainResult = await db.collection('communications').distinct('events.metadata.tracking_id', {}, { explain: "executionStats" });
         const endTime = performance.now();
 
         const totalLatency = Math.round(endTime - startTime);
@@ -249,7 +249,7 @@ const mongoQueries = {
             latency: totalLatency,
             mongoOnlyLatency: mongoOnlyLatency,
             success: true,
-            resultCount: explainResult.executionStats?.totalDocsExamined || 0
+            resultCount: explainResult.executionStats?.nReturned || 0
         };
     }
 };
