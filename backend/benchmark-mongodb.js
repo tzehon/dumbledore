@@ -123,20 +123,25 @@ const mongoQueries = {
         const options = { projection: { events: 1, _id: 0 } };
 
         if (printQuery) {
-            console.log(`  🔍 Query: db.collection('communications').findOne(`);
+            console.log(`  🔍 Query: db.collection('communications').find(`);
             console.log(`      ${JSON.stringify(query, null, 6)},`);
             console.log(`      ${JSON.stringify(options, null, 6)}`);
-            console.log(`    )`);
+            console.log(`    ).limit(1).explain("executionStats")`);
         }
 
         const startTime = performance.now();
-        const result = await db.collection('communications').findOne(query, options);
+        const explainResult = await db.collection('communications').find(query, options).limit(1).explain("executionStats");
         const endTime = performance.now();
 
+        const totalLatency = Math.round(endTime - startTime);
+        const mongoOnlyLatency = explainResult.executionStats.executionTimeMillis;
+        const resultCount = explainResult.executionStats.totalDocsExamined;
+
         return {
-            latency: Math.round(endTime - startTime),
+            latency: totalLatency,
+            mongoOnlyLatency: mongoOnlyLatency,
             success: true,
-            resultCount: result ? (result.events ? result.events.length : 0) : 0
+            resultCount: resultCount
         };
     },
 
@@ -179,46 +184,72 @@ const mongoQueries = {
         }
 
         const startTime = performance.now();
-        const results = await db.collection('communications').aggregate(pipeline).toArray();
+        const explainResult = await db.collection('communications').aggregate(pipeline).explain("executionStats");
         const endTime = performance.now();
 
+        const totalLatency = Math.round(endTime - startTime);
+        
+        let mongoOnlyLatency = 0;
+        if (explainResult.stages && explainResult.stages[0] && explainResult.stages[0].$cursor) {
+            mongoOnlyLatency = explainResult.stages[0].$cursor.executionStats?.executionTimeMillis || 0;
+        } else {
+            mongoOnlyLatency = explainResult.stages ? 
+                explainResult.stages.reduce((total, stage) => total + (stage.executionTimeMillisEstimate || 0), 0) :
+                explainResult.executionStats?.executionTimeMillis || 0;
+        }
+
+        // For aggregation explain, get result count from the final stage's nReturned
+        let resultCount = 0;
+        if (explainResult.stages && explainResult.stages.length > 0) {
+            const finalStage = explainResult.stages[explainResult.stages.length - 1];
+            resultCount = parseInt(finalStage.nReturned) || 0;
+        }
+
         return {
-            latency: Math.round(endTime - startTime),
+            latency: totalLatency,
+            mongoOnlyLatency: mongoOnlyLatency,
             success: true,
-            resultCount: results.length,
-            queryResult: results
+            resultCount: resultCount
         };
     },
 
     'Get Templates': async (testData, printQuery = false) => {
         if (printQuery) {
-            console.log(`  🔍 Query: db.collection('communications').distinct('events.metadata.template_id')`);
+            console.log(`  🔍 Query: db.collection('communications').distinct('events.metadata.template_id', {}, { explain: true })`);
         }
 
         const startTime = performance.now();
-        const templates = await db.collection('communications').distinct('events.metadata.template_id');
+        const explainResult = await db.collection('communications').distinct('events.metadata.template_id', {}, { explain: true });
         const endTime = performance.now();
 
+        const totalLatency = Math.round(endTime - startTime);
+        const mongoOnlyLatency = explainResult.executionStats?.executionTimeMillis || 0;
+
         return {
-            latency: Math.round(endTime - startTime),
+            latency: totalLatency,
+            mongoOnlyLatency: mongoOnlyLatency,
             success: true,
-            resultCount: templates.length
+            resultCount: explainResult.executionStats?.totalDocsExamined || 0
         };
     },
 
     'Get Tracking IDs': async (testData, printQuery = false) => {
         if (printQuery) {
-            console.log(`  🔍 Query: db.collection('communications').distinct('events.metadata.tracking_id')`);
+            console.log(`  🔍 Query: db.collection('communications').distinct('events.metadata.tracking_id', {}, { explain: true })`);
         }
 
         const startTime = performance.now();
-        const trackingIds = await db.collection('communications').distinct('events.metadata.tracking_id');
+        const explainResult = await db.collection('communications').distinct('events.metadata.tracking_id', {}, { explain: true });
         const endTime = performance.now();
 
+        const totalLatency = Math.round(endTime - startTime);
+        const mongoOnlyLatency = explainResult.executionStats?.executionTimeMillis || 0;
+
         return {
-            latency: Math.round(endTime - startTime),
+            latency: totalLatency,
+            mongoOnlyLatency: mongoOnlyLatency,
             success: true,
-            resultCount: trackingIds.length
+            resultCount: explainResult.executionStats?.totalDocsExamined || 0
         };
     }
 };
@@ -276,6 +307,7 @@ async function benchmarkMongoQuery(name, queryFunc, testData) {
         // Benchmark
         console.log(`    Running benchmark... (${BENCHMARK_CONFIG.benchmarkRequests} requests)`);
         const latencies = [];
+        const mongoOnlyLatencies = [];
         const errors = [];
         let lastResult = null;
 
@@ -302,7 +334,8 @@ async function benchmarkMongoQuery(name, queryFunc, testData) {
             batchResults.forEach(result => {
                 if (result.success) {
                     latencies.push(result.latency);
-                    lastResult = result.queryResult; // Capture the last successful result
+                    mongoOnlyLatencies.push(result.mongoOnlyLatency);
+                    lastResult = result.queryResult || `${result.resultCount} results`; // Capture the last successful result
                 } else {
                     errors.push(result.error);
                 }
@@ -325,6 +358,7 @@ async function benchmarkMongoQuery(name, queryFunc, testData) {
         }
 
         const stats = calculateStats(latencies);
+        const mongoOnlyStats = calculateStats(mongoOnlyLatencies);
         const successRate = ((latencies.length / BENCHMARK_CONFIG.benchmarkRequests) * 100).toFixed(1);
 
         // Print the last result from this iteration
@@ -335,6 +369,7 @@ async function benchmarkMongoQuery(name, queryFunc, testData) {
 
         allIterationResults.push({
             ...stats,
+            mongoOnly: mongoOnlyStats,
             successRate: parseFloat(successRate),
             errors: errors.length,
             totalRequests: BENCHMARK_CONFIG.benchmarkRequests,
@@ -353,6 +388,13 @@ async function benchmarkMongoQuery(name, queryFunc, testData) {
         min: Math.min(...allIterationResults.map(r => r.min)),
         max: Math.max(...allIterationResults.map(r => r.max)),
         stdDev: Math.round(allIterationResults.reduce((sum, r) => sum + r.stdDev, 0) / allIterationResults.length * 100) / 100,
+        mongoOnly: {
+            p50: Math.round(allIterationResults.reduce((sum, r) => sum + r.mongoOnly.p50, 0) / allIterationResults.length),
+            p90: Math.round(allIterationResults.reduce((sum, r) => sum + r.mongoOnly.p90, 0) / allIterationResults.length),
+            p95: Math.round(allIterationResults.reduce((sum, r) => sum + r.mongoOnly.p95, 0) / allIterationResults.length),
+            p99: Math.round(allIterationResults.reduce((sum, r) => sum + r.mongoOnly.p99, 0) / allIterationResults.length),
+            avg: Math.round(allIterationResults.reduce((sum, r) => sum + r.mongoOnly.avg, 0) / allIterationResults.length)
+        },
         successRate: (allIterationResults.reduce((sum, r) => sum + r.successRate, 0) / allIterationResults.length).toFixed(1),
         throughput: Math.round(allIterationResults.reduce((sum, r) => sum + r.throughput, 0) / allIterationResults.length),
         totalSamples: BENCHMARK_CONFIG.benchmarkRequests * BENCHMARK_CONFIG.iterations,
@@ -417,11 +459,11 @@ function generateMarkdownReport(results, collectionStats, timestamp) {
     // Performance results
     lines.push('## MongoDB Query Performance Results');
     lines.push('');
-    lines.push('| Query | P50 (Median) | P90 | P95 | P99 | Avg | StdDev |');
-    lines.push('|-------|--------------|-----|-----|-----|-----|--------|');
+    lines.push('| Query | P50 (Total (MongoDB + Network RTT) \\| MongoDB Only) | P90 (Total (MongoDB + Network RTT) \\| MongoDB Only) | P95 (Total (MongoDB + Network RTT) \\| MongoDB Only) | P99 (Total (MongoDB + Network RTT) \\| MongoDB Only) |');
+    lines.push('|-------|----------------------------------------------------------|----------------------------------------------------------|----------------------------------------------------------|----------------------------------------------------------|');
 
     Object.entries(results).forEach(([name, stats]) => {
-        lines.push(`| ${name} | ${stats.p50}ms | ${stats.p90}ms | ${stats.p95}ms | ${stats.p99}ms | ${stats.avg}ms | ${stats.stdDev}ms |`);
+        lines.push(`| ${name} | ${stats.p50}ms/${stats.mongoOnly.p50}ms | ${stats.p90}ms/${stats.mongoOnly.p90}ms | ${stats.p95}ms/${stats.mongoOnly.p95}ms | ${stats.p99}ms/${stats.mongoOnly.p99}ms |`);
     });
 
     lines.push('');
@@ -492,7 +534,8 @@ async function runMongoDBBenchmark() {
 
         Object.entries(results).forEach(([name, stats]) => {
             console.log(`${name}:`);
-            console.log(`  P50: ${stats.p50}ms | P90: ${stats.p90}ms | P95: ${stats.p95}ms | P99: ${stats.p99}ms`);
+            console.log(`  P50: ${stats.p50}ms (${stats.mongoOnly.p50}ms mongodb only) | P90: ${stats.p90}ms (${stats.mongoOnly.p90}ms mongodb only)`);
+            console.log(`  P95: ${stats.p95}ms (${stats.mongoOnly.p95}ms mongodb only) | P99: ${stats.p99}ms (${stats.mongoOnly.p99}ms mongodb only)`);
         });
 
         console.log('');
