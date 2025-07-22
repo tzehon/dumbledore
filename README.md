@@ -209,7 +209,7 @@ The application includes comprehensive timing tracking to help identify performa
 ### Timing Modes
 
 **Development Mode:**
-- Shows detailed breakdown: Database + Backend + Frontend timing
+- Shows detailed breakdown: Database + Network RTT + Backend + Frontend timing
 - Helps identify which layer is causing performance issues
 - Full error logging and debug information
 

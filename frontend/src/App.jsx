@@ -240,44 +240,14 @@ export default function App() {
     }
   }
 
-  const handleRandomResult = () => {
+  const handlePrePopulate = () => {
     setError(null);
-    setIsLoadingComms(true);
     setQueryDuration(null);
 
-    const requestKey = `fetch-random-${Date.now()}`;
-    const { finishTracking } = trackApiCall(requestKey, 'read', 'Fetch random communication result', true);
-
-    fetch(`${API_BASE_URL}/communications/random`)
-      .then(res => {
-        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-        return res.json().then(data => ({ data, response: res }));
-      })
-      .then(({ data, response }) => {
-        setCommunications(data.events || data);
-        // Populate the lookup field with the returned user ID and date
-        if (data.userId) {
-          setLookupUserId(data.userId.toString());
-          setSearchedUserId(data.userId.toString());
-        } else {
-          setSearchedUserId('');
-        }
-        if (data.date) {
-          setSelectedDate(data.date);
-        }
-        const duration = finishTracking(true, response);
-        setQueryDuration(duration);
-      })
-      .catch(error => {
-        if (!IS_PRODUCTION) {
-          console.error("Fetch random communications error:", error);
-        }
-        setError("Failed to fetch random communications. Please check the server connection.");
-        finishTracking(false);
-      })
-      .finally(() => {
-        setIsLoadingComms(false);
-      });
+    // Pre-populate with specified values for user lookup
+    setLookupUserId('1004');
+    setSearchedUserId('1004');
+    setSelectedDate('2025-07-15');
   }
 
   const handleUpdateStatus = (comm, newStatus) => {
@@ -428,7 +398,7 @@ export default function App() {
             lookupUserId={lookupUserId}
             setLookupUserId={setLookupUserId}
             onSearch={handleSearch}
-            onRandomResult={handleRandomResult}
+            onPrePopulate={handlePrePopulate}
             queryDuration={queryDuration}
             requestTimings={requestTimings}
           />
@@ -486,7 +456,7 @@ function Header({ setView, currentView }) {
   );
 }
 
-function Dashboard({ communications, isLoadingComms, onUpdateStatus, onSendNewComm, onReplaceComms, selectedDate, onDateChange, lookupUserId, setLookupUserId, onSearch, onRandomResult, queryDuration, requestTimings }) {
+function Dashboard({ communications, isLoadingComms, onUpdateStatus, onSendNewComm, onReplaceComms, selectedDate, onDateChange, lookupUserId, setLookupUserId, onSearch, onPrePopulate, queryDuration, requestTimings }) {
   return (
     <div>
       <UserLookup
@@ -494,7 +464,7 @@ function Dashboard({ communications, isLoadingComms, onUpdateStatus, onSendNewCo
         setLookupUserId={setLookupUserId}
         onSendNewComm={onSendNewComm}
         onSearch={onSearch}
-        onRandomResult={onRandomResult}
+        onPrePopulate={onPrePopulate}
         requestTimings={requestTimings}
       />
       <CommunicationsLog
@@ -512,7 +482,7 @@ function Dashboard({ communications, isLoadingComms, onUpdateStatus, onSendNewCo
   );
 }
 
-function UserLookup({ lookupUserId, setLookupUserId, onSendNewComm, onSearch, onRandomResult, requestTimings }) {
+function UserLookup({ lookupUserId, setLookupUserId, onSendNewComm, onSearch, onPrePopulate, requestTimings }) {
     const [count, setCount] = useState(1);
 
     const handleKeyDown = (e) => {
@@ -537,8 +507,8 @@ function UserLookup({ lookupUserId, setLookupUserId, onSendNewComm, onSearch, on
                 <button onClick={onSearch} className="bg-gray-800 text-white px-4 py-2 rounded-lg font-semibold hover:bg-gray-900 transition-colors shadow">
                     Search
                 </button>
-                <button onClick={onRandomResult} className="bg-purple-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-purple-700 transition-colors shadow">
-                    Random
+                <button onClick={onPrePopulate} className="bg-purple-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-purple-700 transition-colors shadow">
+                    Pre-Populate
                 </button>
             </div>
             <div className="flex items-center gap-2">
@@ -784,50 +754,25 @@ function CampaignView({ templates, trackingIds, isLoadingDropdowns, requestTimin
             });
     }, [params]);
 
-    const handleRandomSearch = () => {
-        setIsLoading(true);
-        setCampaignQueryDuration(null);
+    const handlePrePopulate = () => {
         setError(null);
-        setLastUserId(null); // Reset cursor for new search
+        setCampaignQueryDuration(null);
+        setLastUserId(null);
 
-        const requestKey = `campaign-random-${Date.now()}`;
-        const { finishTracking } = trackCampaignApiCall(requestKey, 'read', 'Random campaign search', true);
-
-        fetch(`${API_BASE_URL}/campaigns/random`)
-            .then(res => {
-                if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-                return res.json().then(data => ({ data, response: res }));
-            })
-            .then(({ data, response }) => {
-                if (data.searchParams) {
-                    // Update the form parameters with the random search results
-                    setParams(data.searchParams);
-                    setDistinctUsers(data.distinctUsers);
-                    setTotalUsers(data.distinctUsers.length);
-                    setTotalPages(1);
-                    setPage(1);
-                    setHasMore(false);
-                } else {
-                    setDistinctUsers([]);
-                    setTotalUsers(0);
-                    setHasMore(false);
-                }
-                const duration = finishTracking(true, response);
-                setCampaignQueryDuration(duration);
-            })
-            .catch(err => {
-                if (!IS_PRODUCTION) {
-                  console.error("Random campaign search error:", err);
-                }
-                setError("Failed to fetch random campaign data.");
-                setDistinctUsers([]);
-                setTotalUsers(0);
-                setHasMore(false);
-                finishTracking(false);
-            })
-            .finally(() => {
-                setIsLoading(false);
-            });
+        // Pre-populate with specified values for campaign tool
+        setParams({
+            date: '2025-07-15',
+            hour: 5,
+            templateId: 'template_006',
+            trackingId: 'track_002'
+        });
+        
+        // Clear existing results
+        setDistinctUsers([]);
+        setTotalUsers(0);
+        setTotalPages(0);
+        setPage(1);
+        setHasMore(false);
     };
 
     const handleFormSubmit = (e) => {
@@ -867,8 +812,8 @@ function CampaignView({ templates, trackingIds, isLoadingDropdowns, requestTimin
                     </select>
                 </div>
                 <div className="flex gap-2">
-                    <button type="submit" className="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 transition-colors shadow h-10">Search</button>
-                    <button type="button" onClick={handleRandomSearch} className="bg-purple-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-purple-700 transition-colors shadow h-10">Random</button>
+                    <button type="submit" className="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 transition-colors shadow min-w-[80px]">Search</button>
+                    <button type="button" onClick={handlePrePopulate} className="bg-purple-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-purple-700 transition-colors shadow min-w-[120px]">Pre-Populate</button>
                 </div>
             </form>
             <div>
