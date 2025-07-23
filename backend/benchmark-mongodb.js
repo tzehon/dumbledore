@@ -454,6 +454,7 @@ function generateMarkdownReport(results, collectionStats, timestamp) {
     lines.push(`| Server Tier | ${collectionStats.serverTier} |`);
     const totalSamples = Object.values(results)[0].totalSamples;
     lines.push(`| Sample Size | ${totalSamples.toLocaleString()} requests per query |`);
+    lines.push('| Page Size | 500 users per page |');
     lines.push('');
 
     // Performance results
