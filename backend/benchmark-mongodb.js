@@ -31,6 +31,8 @@ const BENCHMARK_CONFIG = {
     confidenceLevel: 0.95
 };
 
+const PAGE_SIZE = 500;
+
 // MongoDB connection
 let mongoClient;
 let db;
@@ -153,7 +155,6 @@ const mongoQueries = {
         startOfHour.setUTCHours(parseInt(testData.hour), 0, 0, 0);
 
         const endOfHour = new Date(startOfHour.getTime() + 60 * 60 * 1000);
-        const PAGE_SIZE = 500;
 
         const matchStage = {
             $match: {
@@ -454,7 +455,7 @@ function generateMarkdownReport(results, collectionStats, timestamp) {
     lines.push(`| Server Tier | ${collectionStats.serverTier} |`);
     const totalSamples = Object.values(results)[0].totalSamples;
     lines.push(`| Sample Size | ${totalSamples.toLocaleString()} requests per query |`);
-    lines.push('| Page Size | 500 users per page |');
+    lines.push(`| Page Size | ${PAGE_SIZE} users per page |`);
     lines.push('');
 
     // Performance results
