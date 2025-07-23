@@ -153,7 +153,7 @@ const mongoQueries = {
         startOfHour.setUTCHours(parseInt(testData.hour), 0, 0, 0);
 
         const endOfHour = new Date(startOfHour.getTime() + 60 * 60 * 1000);
-        const PAGE_SIZE = 10;
+        const PAGE_SIZE = 500;
 
         const matchStage = {
             $match: {
