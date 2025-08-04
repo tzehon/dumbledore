@@ -1,295 +1,231 @@
-# Dumbledore - SmartComms - README
+# Dumbledore - Database Tools
 
-This document provides a complete guide to setting up, running, and managing the full-stack application for Dumbledore.
+This repository contains database management and benchmarking tools for the user communications collection.
 
 ## 1. Project Overview
 
-This project consists of three main parts:
-* **Backend:** A Node.js server using the Express framework that provides a REST API to interact with the MongoDB database.
-* **Frontend:** A React application built with Vite that provides a user interface for internal teams to look up user communication history and analyze campaign data. Features include:
-    * Real-time API request timing display showing duration and type (READ/WRITE) for each operation
-    * User communication lookup and management
-    * Campaign analysis tools with pagination
-    * Communication status updates and bulk operations
-* **Database Scripts:** Standalone Node.js scripts for managing the database:
-    * `setup.js`: Initializes the database schema and populates it with sample data.
-    * `stats.js`: Calculates and displays detailed storage statistics for the database.
+This project provides database tools for managing the `user_comms` MongoDB collection:
+* **Setup Script (`setup.js`)**: Initializes the database and populates it with realistic user communication data
+* **Index Creation (`create-indexes.js`)**: Creates optimized indexes for the Go DAO query operations
+* **Stats Script (`stats.js`)**: Calculates and displays detailed storage statistics for the database
+* **MongoDB Benchmark (`benchmark-mongodb.js`)**: Performance testing for MongoDB queries matching the Go DAO operations
 
 ## 2. Prerequisites
 
-Before you begin, ensure you have the following installed on your system:
-* **Node.js and npm:** [Download Node.js](https://nodejs.org/) (npm is included).
-* **MongoDB:** A running MongoDB instance. This can be a local installation ([MongoDB Community Server](https://www.mongodb.com/try/download/community)) or a cloud instance ([MongoDB Atlas](https://www.mongodb.com/cloud/atlas/register)).
+Before you begin, ensure you have the following installed:
+* **Node.js and npm:** [Download Node.js](https://nodejs.org/) (npm is included)
+* **MongoDB:** A running MongoDB instance. This can be a local installation ([MongoDB Community Server](https://www.mongodb.com/try/download/community)) or a cloud instance ([MongoDB Atlas](https://www.mongodb.com/cloud/atlas/register))
 
 ## 3. Project Structure
 ```
-communications-dashboard/
-├── backend/
-│   ├── node_modules/
-│   ├── .env              # Your environment variables (you will create this)
-│   ├── db.js             # Handles database connection for the server
-│   ├── package.json      # Backend dependencies and scripts
-│   ├── server.js         # The main Express API server
-│   └── setup.js          # Standalone script for DB setup and data seeding
-└── frontend/
-├── node_modules/
-├── public/
-├── src/
-│   └── App.jsx       # Main React component
-└── package.json      # Frontend dependencies and scripts
+dumbledore/
+└── backend/
+    ├── .env              # Your environment variables (you will create this)
+    ├── benchmark-mongodb.js  # MongoDB performance benchmarking
+    ├── create-indexes.js # Index creation for optimal query performance
+    ├── package.json      # Dependencies and scripts
+    ├── setup.js          # Database setup and data seeding
+    └── stats.js          # Database statistics
 ```
 
 ## 4. Setup Instructions
 
-Follow these steps to get the project ready to run.
+### Step 4.1: Install Dependencies
 
-### Step 4.1: Backend Setup
+1. **Navigate to the Backend Directory:**
+   ```bash
+   cd backend
+   ```
 
-1.  **Navigate to the Backend Directory:**
-    Open your terminal and change into the `backend` directory.
-    ```bash
-    cd path/to/your/project/backend
-    ```
+2. **Install Dependencies:**
+   ```bash
+   npm install
+   ```
 
-2.  **Install Dependencies:**
-    Run `npm install` to download all the required packages listed in `package.json`.
-    ```bash
-    npm install
-    ```
+### Step 4.2: Configure Environment Variables
 
-3.  **Configure Environment Variables:**
-    Create a new file named `.env` in the `backend` directory by copying from the example template:
-    ```bash
-    cp .env.example .env
-    ```
-    
-    Then edit `.env` with your actual database configuration:
-    
-    **For Local MongoDB:**
-    ```
-    MONGO_URI="mongodb://localhost:27017"
-    DB_NAME="comms_db"
-    ```
-    
-    **For MongoDB Atlas (Cloud):**
-    Replace the `MONGO_URI` value with your Atlas connection string:
-    ```
-    MONGO_URI="mongodb+srv://your_username:your_password@your_cluster.mongodb.net/?retryWrites=true&w=majority&appName=your_app_name"
-    DB_NAME="comms_db"
-    ```
-    
-    **⚠️ Security Note:** Never commit your actual `.env` file to version control. The `.gitignore` file is configured to exclude it automatically.
+Create a new file named `.env` in the `backend` directory:
 
-### Step 4.2: Frontend Setup
-
-1.  **Navigate to the Frontend Directory:**
-    Open a **new, separate terminal window** and change into the `frontend` directory.
-    ```bash
-    cd path/to/your/project/frontend
-    ```
-
-2.  **Install Dependencies:**
-    Run `npm install` to download all the required packages for the React application.
-    ```bash
-    npm install
-    ```
-
-## 5. Database Management
-
-The `backend` directory contains two scripts for managing your development database.
-
-### To Set Up and Seed the Database
-
-**Reset Mode (Default)** - Completely reset the database to a clean, seeded state:
-* In your **backend terminal**, run:
-    ```bash
-    npm run setup        # Default: reset mode
-    npm run setup:reset  # Explicit reset mode
-    ```
-
-**Append Mode** - Add more users to existing data without dropping the collection:
-* In your **backend terminal**, run:
-    ```bash
-    npm run setup:append
-    ```
-* This will find the highest existing user ID and continue from there
-* Useful for gradually increasing your dataset size for testing
-
-### To View Database Statistics
-
-After the setup script has finished, you can run this command to see a detailed breakdown of data and index sizes.
-
-* In your **backend terminal**, run:
-    ```bash
-    npm run stats
-    ```
-
-## 6. Running the Application
-
-To run the application, you need to have both the backend and frontend servers running simultaneously in their respective terminals.
-
-### Step 6.1: Start the Backend Server
-
-**Production Mode (Optimized Performance):**
-```bash
-npm run prod
+**For Local MongoDB:**
 ```
-- Minimal logging for optimal performance
-- Runs on: `http://localhost:5001`
-- Shows: `Server running on http://localhost:5001 (PRODUCTION MODE)`
-
-**Development Mode (Full Debug Information):**
-```bash
-npm run dev
-```
-- Complete query logging and analysis
-- Database explain() output for optimization
-- Runs on: `http://localhost:5002`
-- Shows: `Server running on http://localhost:5002 (DEV MODE)`
-
-### Step 6.2: Start the Frontend Server
-
-**Development Mode (Full Timing Breakdown):**
-```bash
-npm run dev
-```
-- Shows detailed timing breakdown: Database + Backend + Frontend
-- Full error logging and debug information
-- Shows "DEV MODE" indicator in header
-- Connects to backend on port 5002
-- Frontend URL: `http://localhost:5173`
-
-**Production Mode (Optimized Performance):**
-```bash
-npm run prod
-```
-- Shows end-to-end total latency only
-- Minimal logging for better performance
-- Clean interface without dev indicators
-- Connects to backend on port 5001
-- Frontend URL: `http://localhost:5174`
-
-### Step 6.3: View the Application
-
-1.  Open your web browser.
-2.  Navigate to the appropriate frontend URL:
-    - **Development Mode**: http://localhost:5173
-    - **Production Mode**: http://localhost:5174
-
-You should now see the "Dumbledore - SmartComms" running in your browser.
-
-## 7. Performance Timing Breakdown
-
-The application includes comprehensive timing tracking to help identify performance bottlenecks across the full stack. Here's what each timing measurement represents:
-
-### Database Layer (MongoDB)
-- **Query execution time** - Time spent executing MongoDB operations (`findOne`, `aggregate`, `updateOne`, etc.)
-- **Index lookups and scanning** - Time spent traversing indexes and scanning documents
-- **Document retrieval** - Time spent retrieving documents from disk/memory
-- **Aggregation processing** - Time spent processing aggregation pipelines (like `$sample` for random results)
-
-### Backend Processing (Node.js/Express)
-- **JSON parsing/serialization** - Converting MongoDB results to JSON responses
-- **Request validation** - Checking required parameters and parsing query strings
-- **Date/time processing** - Converting date strings to Date objects and timezone handling
-- **Object construction** - Building MongoDB query objects and update operations
-- **Response header setting** - Adding timing and CORS headers
-- **Network I/O** - Receiving request body and sending response data
-- **JavaScript execution** - Function calls, variable assignments, and business logic
-
-### Frontend Processing (React)
-- **Network request overhead** - `fetch()` call setup and HTTP connection establishment
-- **JSON parsing** - Converting API responses to JavaScript objects
-- **State updates** - React `setState` calls that trigger component re-renders
-- **DOM updates** - Re-rendering components when state changes
-- **Event handling** - Processing user interactions (clicks, form submissions)
-- **JavaScript execution** - Function calls, array operations, and string manipulation
-- **React reconciliation** - Virtual DOM diffing and real DOM updates
-
-### Timing Modes
-
-**Development Mode:**
-- Shows detailed breakdown: Database + Network RTT + Backend + Frontend timing
-- Helps identify which layer is causing performance issues
-- Full error logging and debug information
-
-**Production Mode:**
-- Shows optimized end-to-end total latency only
-- Minimal overhead for maximum performance
-- Clean interface without debug details
-
-### Using Timing Data
-
-The separate timing measurements help identify bottlenecks:
-- **High database time** → Query optimization or indexing needed
-- **High backend processing** → Server-side logic optimization required  
-- **High frontend time** → Client-side rendering or state management issues
-
----
-## Summary of Commands
-
-**To reset the database:**
-```bash
-# In ./backend terminal
-npm run setup        # Default: reset (same as setup:reset)
-npm run setup:reset  # Drop collection and reseed from scratch
+MONGO_URI="mongodb://localhost:27017"
+DB_NAME="smartcomms"
 ```
 
-**To append more data:**
-```bash
-# In ./backend terminal
-npm run setup:append # Add more users to existing data
+**For MongoDB Atlas (Cloud):**
+```
+MONGO_URI="mongodb+srv://your_username:your_password@your_cluster.mongodb.net/?retryWrites=true&w=majority&appName=your_app_name"
+DB_NAME="smartcomms"
 ```
 
-**To view database stats:**
+**⚠️ Security Note:** Never commit your actual `.env` file to version control.
+
+## 5. Database Management Tools
+
+### Setup Script - Generate User Communications Data
+
+The setup script generates realistic `user_comms` documents with the following structure:
+- `_id`: Composite key of `user_id_tracking_id_template_id`
+- `user_id`: User identifier (e.g., "P_user001")
+- `tracking_id`: Campaign tracking UUID
+- `template_id`: Template identifier
+- `content_end_time`: Random future date (1-4 weeks from now)
+- `created_at`, `updated_at`: Timestamps
+- `dispatch_time`: Array of 7 timestamps
+- `final_score`: Score between 0.6-1.0
+- `relevance_score`: Score between 0.4-0.6
+- `planned_date_hour`: Planned delivery time
+- `sent_at`: Delivery status (0 or 1)
+
+**Generate Specific Number of Documents:**
 ```bash
-# In ./backend terminal
+npm run setup:docs -- 1000      # Generate 1,000 documents
+npm run setup:docs -- 50000     # Generate 50,000 documents
+npm run setup:docs -- 500000    # Generate 500,000 documents
+```
+
+**Reset Mode (Default)** - Completely reset the database to a clean state:
+```bash
+npm run setup        # Default: 1M documents (reset mode)
+npm run setup:reset  # Default: 1M documents (explicit reset mode)
+```
+
+**Append Mode** - Add more documents to existing data:
+```bash
+npm run setup:append  # Default: 1M additional documents
+```
+
+### Index Creation Script - Optimize Query Performance
+
+Create the required indexes for optimal Go DAO query performance:
+```bash
+npm run indexes
+```
+
+**Creates 3 optimized indexes:**
+1. `{ "user_id": 1 }` - GetEligibleUserComms
+2. `{ "tracking_id": 1, "template_id": 1, "planned_date_hour": 1, "user_id": 1 }` - GetScheduleSegment
+3. `{ "user_id": 1, "final_score": -1, "planned_date_hour": 1 }` - GetUserSchedule (ESR pattern)
+
+**Note:** Fresh data seeding (`npm run setup`) drops the collection, so indexes need to be recreated after seeding.
+
+### Stats Script - View Database Statistics
+
+After running the setup script, view detailed storage information:
+```bash
 npm run stats
 ```
 
-**To run performance benchmarks:**
+This shows:
+- Collection size and document count
+- Index sizes and usage
+- Storage breakdown
+- Performance metrics
 
-**HTTP + Database Benchmarking:**
+## 6. Performance Benchmarking
+
+### MongoDB Benchmark
+
+Test the performance of database queries that match the Go DAO operations:
+
 ```bash
-# Terminal 1: Start production server
-npm run prod
-
-# Terminal 2: Run HTTP benchmark  
-npm run benchmark
-```
-
-**MongoDB-Only Benchmarking:**
-```bash
-# In ./backend terminal (no server needed)
 npm run benchmark:mongodb
 ```
 
-**Available benchmark commands:**
-- `npm run benchmark` - Full HTTP + MongoDB timing (requires server running)
-- `npm run benchmark:mongodb` - Pure MongoDB timing only (no server needed)
+**Benchmark Queries Tested:**
+1. **GetEligibleUserComms** - Find all communications for a user
+2. **GetScheduleSegment** - Cursor-based pagination for campaign scheduling
+3. **GetUserSchedule** - Time-range queries with scoring
 
-The MongoDB-only benchmark:
-- Connects directly to MongoDB (no Express server needed)
-- Measures pure database query performance  
-- Tests the same queries as the HTTP benchmark
-- Generates reports with `mongodb_` prefix
+**Features:**
+- Tests pure MongoDB query performance (no HTTP overhead)
+- Connects directly to MongoDB
+- Measures execution time with `explain("executionStats")`
+- Generates detailed performance reports
+- Interactive prompts for collection context
 
-**To run the app:**
+**Output:**
+- Console performance summary
+- Markdown report saved as `mongodb_<tier>_<doc_count>.md`
+- Percentile breakdown (P50, P90, P95, P99)
+- Both total latency and MongoDB-only execution time
 
-**Production Mode (Optimized):**
-```bash
-# In ./backend terminal
-npm run prod
+## 7. Data Model
 
-# In ./frontend terminal  
-npm run prod
+The `user_comms` collection uses a flat document structure optimized for the Go DAO operations:
+
+```json
+{
+  "_id": "P_user001_uuid-tracking-id_template-uuid-abc",
+  "user_id": "P_user001",
+  "tracking_id": "550e8400-e29b-41d4-a716-446655440000",
+  "template_id": "template_abc12345-001",
+  "content_end_time": "2025-08-15T10:30:00.000Z",
+  "created_at": "2025-08-01T12:00:00.000Z",
+  "updated_at": "2025-08-01T12:05:00.000Z",
+  "dispatch_time": [1722513600000, 1722513610000, ...],
+  "final_score": 0.73,
+  "relevance_score": 0.52,
+  "planned_date_hour": "2025-08-01T15:00:00.000Z",
+  "sent_at": 0
+}
 ```
 
-**Development Mode (Full Debug):**
-```bash
-# In ./backend terminal
-npm run dev
+## 8. Recommended Workflow
 
-# In ./frontend terminal
-npm run dev
+For optimal performance testing and analysis, follow this workflow:
+
+```bash
+# 1. Generate your desired amount of test data
+npm run setup:docs -- 1000000    # Seed 1M documents (or your preferred amount)
+
+# 2. Create optimized indexes for the DAO operations  
+npm run indexes                   # Create the 3 required indexes
+
+# 3. Test query performance with proper indexing
+npm run benchmark:mongodb         # Benchmark with explain plans showing index usage
+
+# 4. Analyze storage and index efficiency
+npm run stats                     # View collection size and index statistics
 ```
+
+**Why this order matters:**
+- Data seeding first ensures realistic document distribution for index creation
+- Indexes must be created after seeding since `setup` drops the collection
+- Benchmarking after indexing shows optimal performance with proper index usage
+- Stats at the end provides storage analysis including index overhead
+
+## 9. Command Summary
+
+**Database Setup:**
+```bash
+npm run setup:docs -- 1000     # Generate 1,000 documents
+npm run setup:docs -- 500000   # Generate 500,000 documents
+npm run setup                  # Default: 1M documents (reset)
+npm run setup:append           # Add 1M more documents
+```
+
+**Index Creation:**
+```bash
+npm run indexes                # Create optimized indexes for DAO queries
+```
+
+**Database Statistics:**
+```bash
+npm run stats                  # View collection and index stats
+```
+
+**Performance Benchmarking:**
+```bash
+npm run benchmark:mongodb      # Test MongoDB query performance
+```
+
+## 9. Optimization Notes
+
+- **Composite _id**: Eliminates need for separate unique index on user_id+tracking_id+template_id
+- **Flat Structure**: Avoids complex nested queries and aggregations
+- **Pre-generated Data**: Template and tracking IDs are fully randomized per document
+- **Realistic Timestamps**: Content end times are future dates, created/updated times follow logical progression
+- **Cursor Pagination**: GetScheduleSegment implements efficient cursor-based pagination
+
+The tools are designed to generate realistic data volumes and test patterns that match production Go DAO usage.

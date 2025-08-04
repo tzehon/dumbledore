@@ -9,8 +9,9 @@
     "setup": "node setup.js --reset",
     "setup:reset": "node setup.js --reset",
     "setup:append": "node setup.js --append",
+    "setup:docs": "node setup.js --reset",
+    "indexes": "node create-indexes.js",
     "stats": "node stats.js",
-    "benchmark": "node benchmark.js",
     "benchmark:mongodb": "node benchmark-mongodb.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

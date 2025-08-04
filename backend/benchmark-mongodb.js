@@ -27,8 +27,7 @@ const BENCHMARK_CONFIG = {
     warmupRequests: 10,
     benchmarkRequests: 1000,
     concurrency: 10,
-    iterations: 3,
-    confidenceLevel: 0.95
+    iterations: 3
 };
 
 const PAGE_SIZE = 500;
@@ -64,75 +63,84 @@ async function closeMongoDB() {
 
 // Get test data from existing document
 async function getExistingTestData() {
-    // Get one existing document with events
-    const document = await db.collection('communications').findOne({
-        events: { $exists: true, $ne: [] }
+    // Get one existing document from user_comms
+    const document = await db.collection('user_comms').findOne({
+        planned_date_hour: { $exists: true }
     });
 
-    if (!document || !document.events || document.events.length === 0) {
-        throw new Error('No communication documents found in database.');
+    if (!document) {
+        throw new Error('No user_comms documents found in database.');
     }
 
-    const firstEvent = document.events[0];
-    const dayDate = new Date(document.day);
-    const dateString = dayDate.toISOString().split('T')[0];
+    // Extract user_id from the composite _id (format: userId_trackingId_templateId)
+    const idParts = document._id.split('_');
+    const userId = idParts[0];
+    
+    // Get a few documents for the same tracking/template to find lastUserId for pagination
+    const paginationDocs = await db.collection('user_comms').find({
+        tracking_id: document.tracking_id,
+        template_id: document.template_id,
+        planned_date_hour: document.planned_date_hour
+    })
+    .sort({ user_id: 1 })
+    .limit(10)
+    .toArray();
 
-    // Get a lastUserId for pagination testing
-    const distinctUsersResult = await db.collection('communications').aggregate([
-        {
-            $match: {
-                day: document.day,
-                events: {
-                    $elemMatch: {
-                        "dispatch_time": {
-                            $gte: new Date(new Date(firstEvent.dispatch_time).setMinutes(0, 0, 0)),
-                            $lt: new Date(new Date(firstEvent.dispatch_time).setMinutes(59, 59, 999))
-                        },
-                        "metadata.template_id": firstEvent.metadata.template_id,
-                        "metadata.tracking_id": firstEvent.metadata.tracking_id
-                    }
-                }
-            }
-        },
-        { $group: { _id: "$user.id" } },
-        { $sort: { _id: 1 } },
-        { $limit: 10 }
-    ]).toArray();
+    // For v1, lastUserId should be null (first page)
+    const lastUserIdForV1 = null;
+    
+    // For v2, we need a valid lastUserId for pagination
+    let lastUserIdForV2;
+    if (paginationDocs.length > 5) {
+        lastUserIdForV2 = paginationDocs[5].user_id;
+    } else if (paginationDocs.length > 0) {
+        lastUserIdForV2 = paginationDocs[0].user_id;
+    } else {
+        // Fallback: use the current document's user_id
+        lastUserIdForV2 = userId;
+    }
 
-    const lastUserId = distinctUsersResult.length > 5 ? distinctUsersResult[5]._id : null;
+    // Calculate date ranges for GetUserSchedule testing
+    const plannedDate = new Date(document.planned_date_hour);
+    const startTime = new Date(plannedDate);
+    startTime.setHours(startTime.getHours() - 12); // 12 hours before
+    const endTime = new Date(plannedDate);
+    endTime.setHours(endTime.getHours() + 12); // 12 hours after
 
     return {
-        userId: document.user.id,
-        userType: document.user.type,
-        templateId: firstEvent.metadata.template_id,
-        trackingId: firstEvent.metadata.tracking_id,
-        status: firstEvent.status,
-        date: dateString,
-        hour: new Date(firstEvent.dispatch_time).getHours(),
-        dispatch_time: firstEvent.dispatch_time,
-        lastUserId: lastUserId,
-        dayDate: document.day
+        userId: document.user_id,
+        templateId: document.template_id,
+        trackingId: document.tracking_id,
+        plannedDateHour: document.planned_date_hour,
+        startTime: startTime,
+        endTime: endTime,
+        lastUserId: lastUserIdForV1,  // For backward compatibility
+        lastUserIdForV1: lastUserIdForV1,
+        lastUserIdForV2: lastUserIdForV2,
+        compositeId: document._id
     };
 }
 
-// MongoDB-only query functions
+// MongoDB-only query functions matching Go DAO operations
 const mongoQueries = {
-    'Get Communications (User/Day)': async (testData, printQuery = false) => {
-        const startOfDay = new Date(testData.date);
-        startOfDay.setUTCHours(0, 0, 0, 0);
-
-        const query = { "user.id": testData.userId, day: startOfDay };
-        const options = { projection: { events: 1, _id: 0 } };
+    'GetEligibleUserComms': async (testData, printQuery = false) => {
+        const query = { user_id: testData.userId };
+        const options = { 
+            // Limit to 100 documents to simulate typical user load
+            // This avoids iterating through potentially thousands of docs
+            limit: 100,
+            batchSize: 100
+        };
 
         if (printQuery) {
-            console.log(`  🔍 Query: db.collection('communications').find(`);
-            console.log(`      ${JSON.stringify(query, null, 6)},`);
-            console.log(`      ${JSON.stringify(options, null, 6)}`);
-            console.log(`    ).limit(1).explain("executionStats")`);
+            console.log(`  🔍 Query: db.collection('user_comms').find(`);
+            console.log(`      ${JSON.stringify(query, null, 6)}`);
+            console.log(`    ).batchSize(100).limit(100).explain("executionStats")`);
+            console.log(`  📋 Note: Using limit(100) to simulate typical user data volume`);
         }
 
         const startTime = performance.now();
-        const explainResult = await db.collection('communications').find(query, options).limit(1).explain("executionStats");
+        const explainResult = await db.collection('user_comms').find(query).batchSize(100).limit(100).explain("executionStats");
         const endTime = performance.now();
 
         const totalLatency = Math.round(endTime - startTime);
@@ -147,64 +155,44 @@ const mongoQueries = {
         };
     },
 
-    'Get Distinct Users for a Campaign': async (testData, printQuery = false) => {
-        const startOfDay = new Date(testData.date);
-        startOfDay.setUTCHours(0, 0, 0, 0);
-
-        const startOfHour = new Date(testData.date);
-        startOfHour.setUTCHours(parseInt(testData.hour), 0, 0, 0);
-
-        const endOfHour = new Date(startOfHour.getTime() + 60 * 60 * 1000);
-
-        const matchStage = {
-            $match: {
-                day: startOfDay,
-                events: {
-                    $elemMatch: {
-                        "dispatch_time": { $gte: startOfHour, $lt: endOfHour },
-                        "metadata.template_id": testData.templateId,
-                        "metadata.tracking_id": testData.trackingId
-                    }
-                }
-            }
+    'GetScheduleSegment_v1': async (testData, printQuery = false) => {
+        // Build base filter
+        const query = {
+            tracking_id: testData.trackingId,
+            template_id: testData.templateId,
+            planned_date_hour: testData.plannedDateHour
+        };
+        
+        // Add pagination condition if lastUserId provided
+        if (testData.lastUserId) {
+            query.user_id = { $gt: testData.lastUserId };
+        }
+        
+        const options = {
+            sort: { user_id: 1 },
+            limit: PAGE_SIZE,
+            projection: { user_id: 1 } // Only return user_id field
         };
 
-        const pipeline = [
-            matchStage,
-            { $group: { _id: "$user.id" } },
-            { $sort: { _id: 1 } },
-            ...(testData.lastUserId ? [{ $match: { _id: { $gt: parseInt(testData.lastUserId) } } }] : []),
-            { $limit: PAGE_SIZE + 1 }
-        ];
-
         if (printQuery) {
-            console.log(`  🔍 Query: db.collection('communications').aggregate(`);
-            console.log(`      ${JSON.stringify(pipeline, null, 6)}`);
-            console.log(`    ).toArray()`);
-            console.log(`  📋 Using lastUserId: ${testData.lastUserId}`);
+            console.log(`  🔍 Query: db.collection('user_comms').find(`);
+            console.log(`      ${JSON.stringify(query, null, 6)},`);
+            console.log(`      ${JSON.stringify(options, null, 6)}`);
+            console.log(`    ).explain("executionStats")`);
+            console.log(`  📋 V1: Initial page query (lastUserId can be null)`);
+            console.log(`  📋 Using cursor-based pagination with lastUserId: ${testData.lastUserId || 'null (first page)'}`);
+            console.log(`  📋 Page size: ${PAGE_SIZE}`);
         }
 
         const startTime = performance.now();
-        const explainResult = await db.collection('communications').aggregate(pipeline).explain("executionStats");
+        const explainResult = await db.collection('user_comms')
+            .find(query, options)
+            .explain("executionStats");
         const endTime = performance.now();
 
         const totalLatency = Math.round(endTime - startTime);
-
-        let mongoOnlyLatency = 0;
-        if (explainResult.stages && explainResult.stages[0] && explainResult.stages[0].$cursor) {
-            mongoOnlyLatency = explainResult.stages[0].$cursor.executionStats?.executionTimeMillis || 0;
-        } else {
-            mongoOnlyLatency = explainResult.stages ?
-                explainResult.stages.reduce((total, stage) => total + (stage.executionTimeMillisEstimate || 0), 0) :
-                explainResult.executionStats?.executionTimeMillis || 0;
-        }
-
-        // For aggregation explain, get result count from the final stage's nReturned
-        let resultCount = 0;
-        if (explainResult.stages && explainResult.stages.length > 0) {
-            const finalStage = explainResult.stages[explainResult.stages.length - 1];
-            resultCount = parseInt(finalStage.nReturned) || 0;
-        }
+        const mongoOnlyLatency = explainResult.executionStats.executionTimeMillis;
+        const resultCount = explainResult.executionStats.nReturned || 0;
 
         return {
             latency: totalLatency,
@@ -214,43 +202,91 @@ const mongoQueries = {
         };
     },
 
-    'Get Templates': async (testData, printQuery = false) => {
+    'GetScheduleSegment_v2': async (testData, printQuery = false) => {
+        // V2 always includes lastUserId for pagination (no first page query)
+        const query = {
+            tracking_id: testData.trackingId,
+            template_id: testData.templateId,
+            planned_date_hour: testData.plannedDateHour,
+            user_id: { $gt: testData.lastUserIdForV2 }
+        };
+        
+        const options = {
+            sort: { user_id: 1 },
+            limit: PAGE_SIZE,
+            projection: { user_id: 1 } // Only return user_id field
+        };
+
         if (printQuery) {
-            console.log(`  🔍 Query: db.collection('communications').distinct('events.metadata.template_id', {}, { explain: "executionStats" })`);
+            console.log(`  🔍 Query: db.collection('user_comms').find(`);
+            console.log(`      ${JSON.stringify(query, null, 6)},`);
+            console.log(`      ${JSON.stringify(options, null, 6)}`);
+            console.log(`    ).explain("executionStats")`);
+            console.log(`  📋 V2: Pagination query (lastUserId always provided)`);
+            console.log(`  📋 Using cursor-based pagination with lastUserId: ${testData.lastUserIdForV2}`);
+            console.log(`  📋 Page size: ${PAGE_SIZE}`);
         }
 
         const startTime = performance.now();
-        const explainResult = await db.collection('communications').distinct('events.metadata.template_id', {}, { explain: "executionStats" });
+        const explainResult = await db.collection('user_comms')
+            .find(query, options)
+            .explain("executionStats");
         const endTime = performance.now();
 
         const totalLatency = Math.round(endTime - startTime);
-        const mongoOnlyLatency = explainResult.executionStats?.executionTimeMillis || 0;
+        const mongoOnlyLatency = explainResult.executionStats.executionTimeMillis;
+        const resultCount = explainResult.executionStats.nReturned || 0;
 
         return {
             latency: totalLatency,
             mongoOnlyLatency: mongoOnlyLatency,
             success: true,
-            resultCount: explainResult.executionStats?.nReturned || 0
+            resultCount: resultCount
         };
     },
 
-    'Get Tracking IDs': async (testData, printQuery = false) => {
+    'GetUserSchedule': async (testData, printQuery = false) => {
+        const query = {
+            user_id: testData.userId,
+            planned_date_hour: {
+                $gte: testData.startTime,
+                $lte: testData.endTime
+            }
+        };
+
+        const options = {
+            sort: { final_score: -1 }, // DESC order
+            projection: {
+                tracking_id: 1,
+                template_id: 1,
+                final_score: 1
+            }
+        };
+
         if (printQuery) {
-            console.log(`  🔍 Query: db.collection('communications').distinct('events.metadata.tracking_id', {}, { explain: "executionStats" })`);
+            console.log(`  🔍 Query: db.collection('user_comms').find(`);
+            console.log(`      ${JSON.stringify(query, null, 6)},`);
+            console.log(`      ${JSON.stringify(options, null, 6)}`);
+            console.log(`    ).explain("executionStats")`);
+            console.log(`  📋 Date range: ${testData.startTime.toISOString()} to ${testData.endTime.toISOString()}`);
+            console.log(`  📋 Sorted by final_score DESC`);
         }
 
         const startTime = performance.now();
-        const explainResult = await db.collection('communications').distinct('events.metadata.tracking_id', {}, { explain: "executionStats" });
+        const explainResult = await db.collection('user_comms')
+            .find(query, options)
+            .explain("executionStats");
         const endTime = performance.now();
 
         const totalLatency = Math.round(endTime - startTime);
-        const mongoOnlyLatency = explainResult.executionStats?.executionTimeMillis || 0;
+        const mongoOnlyLatency = explainResult.executionStats.executionTimeMillis;
+        const resultCount = explainResult.executionStats.nReturned || 0;
 
         return {
             latency: totalLatency,
             mongoOnlyLatency: mongoOnlyLatency,
             success: true,
-            resultCount: explainResult.executionStats?.nReturned || 0
+            resultCount: resultCount
         };
     }
 };
@@ -285,6 +321,145 @@ function calculateStats(latencies) {
     return percentiles;
 }
 
+// Print detailed explain plan for a query
+async function printExplainPlan(queryName, queryFunc, testData) {
+    console.log(`\n  📋 EXPLAIN PLAN for ${queryName}:`);
+    console.log(`  ${'='.repeat(50)}`);
+    
+    try {
+        // Get the explain result by calling the query function with printQuery=false
+        // We need to create separate explain calls for each query type
+        
+        if (queryName === 'GetEligibleUserComms') {
+            const query = { user_id: testData.userId };
+            const explainResult = await db.collection('user_comms')
+                .find(query)
+                .batchSize(100)
+                .limit(100)
+                .explain("executionStats");
+            
+            printExplainDetails(explainResult);
+            
+        } else if (queryName === 'GetScheduleSegment_v1') {
+            const query = {
+                tracking_id: testData.trackingId,
+                template_id: testData.templateId,
+                planned_date_hour: testData.plannedDateHour
+            };
+            
+            if (testData.lastUserId) {
+                query.user_id = { $gt: testData.lastUserId };
+            }
+            
+            const explainResult = await db.collection('user_comms')
+                .find(query, {
+                    sort: { user_id: 1 },
+                    limit: PAGE_SIZE,
+                    projection: { user_id: 1 }
+                })
+                .explain("executionStats");
+                
+            printExplainDetails(explainResult);
+            
+        } else if (queryName === 'GetScheduleSegment_v2') {
+            const query = {
+                tracking_id: testData.trackingId,
+                template_id: testData.templateId,
+                planned_date_hour: testData.plannedDateHour,
+                user_id: { $gt: testData.lastUserIdForV2 }
+            };
+            
+            const explainResult = await db.collection('user_comms')
+                .find(query, {
+                    sort: { user_id: 1 },
+                    limit: PAGE_SIZE,
+                    projection: { user_id: 1 }
+                })
+                .explain("executionStats");
+                
+            printExplainDetails(explainResult);
+            
+        } else if (queryName === 'GetUserSchedule') {
+            const query = {
+                user_id: testData.userId,
+                planned_date_hour: {
+                    $gte: testData.startTime,
+                    $lte: testData.endTime
+                }
+            };
+            
+            const explainResult = await db.collection('user_comms')
+                .find(query, {
+                    sort: { final_score: -1 },
+                    projection: {
+                        tracking_id: 1,
+                        template_id: 1,
+                        final_score: 1
+                    }
+                })
+                .explain("executionStats");
+                
+            printExplainDetails(explainResult);
+        }
+        
+    } catch (error) {
+        console.log(`  ❌ Error getting explain plan: ${error.message}`);
+    }
+    
+    console.log(`  ${'='.repeat(50)}\n`);
+}
+
+// Helper function to print explain plan details
+function printExplainDetails(explainResult) {
+    const stats = explainResult.executionStats;
+    const winningPlan = explainResult.queryPlanner.winningPlan;
+    
+    console.log(`  🎯 Execution Summary:`);
+    console.log(`     Total docs examined: ${stats.totalDocsExamined.toLocaleString()}`);
+    console.log(`     Total docs returned: ${stats.nReturned.toLocaleString()}`);
+    console.log(`     Execution time: ${stats.executionTimeMillis}ms`);
+    console.log(`     Index hits: ${stats.totalKeysExamined.toLocaleString()}`);
+    
+    // Check if index was used
+    if (stats.totalKeysExamined > 0) {
+        console.log(`  ✅ INDEX USED`);
+        
+        // Extract index information from winning plan
+        function extractIndexInfo(stage) {
+            if (stage.stage === 'IXSCAN') {
+                console.log(`     Index name: ${stage.indexName}`);
+                console.log(`     Index keys: ${JSON.stringify(stage.keyPattern)}`);
+                console.log(`     Direction: ${stage.direction || 'forward'}`);
+                if (stage.indexBounds) {
+                    console.log(`     Index bounds: ${JSON.stringify(stage.indexBounds, null, 6).replace(/\n/g, '\n     ')}`);
+                }
+            } else if (stage.inputStage) {
+                extractIndexInfo(stage.inputStage);
+            } else if (stage.inputStages) {
+                stage.inputStages.forEach(extractIndexInfo);
+            }
+        }
+        
+        extractIndexInfo(winningPlan);
+        
+    } else {
+        console.log(`  ❌ COLLECTION SCAN - No index used`);
+    }
+    
+    // Show query execution stages
+    console.log(`  📊 Execution stages:`);
+    function printStages(stage, depth = 0) {
+        const indent = '     ' + '  '.repeat(depth);
+        console.log(`${indent}${stage.stage}`);
+        if (stage.inputStage) {
+            printStages(stage.inputStage, depth + 1);
+        } else if (stage.inputStages) {
+            stage.inputStages.forEach(s => printStages(s, depth + 1));
+        }
+    }
+    printStages(winningPlan);
+}
+
 // Run benchmark for a single MongoDB query
 async function benchmarkMongoQuery(name, queryFunc, testData) {
     console.log(`\n🔥 Benchmarking MongoDB Query: ${name}`);
@@ -294,9 +469,10 @@ async function benchmarkMongoQuery(name, queryFunc, testData) {
     for (let iteration = 1; iteration <= BENCHMARK_CONFIG.iterations; iteration++) {
         console.log(`  📊 Iteration ${iteration}/${BENCHMARK_CONFIG.iterations}`);
 
-        // Print query details for the first iteration only
+        // Print query details and explain plan for the first iteration only
         if (iteration === 1) {
             await queryFunc(testData, true); // Print query
+            await printExplainPlan(name, queryFunc, testData);
         }
 
         // Warmup
@@ -411,26 +587,19 @@ async function getCollectionInfo() {
     console.log('');
 
     const docCountInput = await askQuestion('Number of documents in collection: ');
-    const userCountInput = await askQuestion('Number of users in collection: ');
     const serverTier = await askQuestion('Server tier (e.g., "M60" or "R60"): ');
 
     const docCount = parseInt(docCountInput.replace(/,/g, ''));
-    const userCount = parseInt(userCountInput.replace(/,/g, ''));
 
     if (isNaN(docCount) || docCount <= 0) {
         throw new Error('Invalid document count. Please enter a positive number.');
     }
 
-    if (isNaN(userCount) || userCount <= 0) {
-        throw new Error('Invalid user count. Please enter a positive number.');
-    }
-
     console.log('');
-    console.log(`✅ Collection context: ${userCount.toLocaleString()} users, ${docCount.toLocaleString()} documents on ${serverTier}`);
+    console.log(`✅ Collection context: ${docCount.toLocaleString()} documents on ${serverTier}`);
     console.log('');
 
     return {
-        users: userCount,
         documents: docCount,
         serverTier: serverTier
     };
@@ -442,34 +611,30 @@ function generateMarkdownReport(results, collectionStats, timestamp) {
 
     lines.push('# MongoDB Performance Benchmark Report');
     lines.push('');
-    lines.push('**Direct MongoDB queries without HTTP/Express overhead**');
-    lines.push('');
 
     // Collection context
     lines.push('## Test Environment');
     lines.push('');
     lines.push('| Metric | Value |');
     lines.push('|--------|--------|');
-    lines.push(`| Users | ${collectionStats.users.toLocaleString()} |`);
     lines.push(`| Documents | ${collectionStats.documents.toLocaleString()} |`);
     lines.push(`| Server Tier | ${collectionStats.serverTier} |`);
     const totalSamples = Object.values(results)[0].totalSamples;
     lines.push(`| Sample Size | ${totalSamples.toLocaleString()} requests per query |`);
-    lines.push(`| Page Size | ${PAGE_SIZE} users per page |`);
+    lines.push(`| Page Size | ${PAGE_SIZE} documents per page |`);
     lines.push('');
 
     // Performance results
-    lines.push('## MongoDB Query Performance Results');
+    lines.push('## MongoDB Query Performance Results (user_comms collection)');
     lines.push('');
-    lines.push('| Query | P50 (Total (MongoDB + Network RTT) \\| MongoDB Only) | P90 (Total (MongoDB + Network RTT) \\| MongoDB Only) | P95 (Total (MongoDB + Network RTT) \\| MongoDB Only) | P99 (Total (MongoDB + Network RTT) \\| MongoDB Only) |');
-    lines.push('|-------|----------------------------------------------------------|----------------------------------------------------------|----------------------------------------------------------|----------------------------------------------------------|');
+    lines.push('| Query | P50 (Total \\| MongoDB Only) | P90 (Total \\| MongoDB Only) | P95 (Total \\| MongoDB Only) | P99 (Total \\| MongoDB Only) |');
+    lines.push('|-------|------------------------------|------------------------------|------------------------------|------------------------------|');
 
     Object.entries(results).forEach(([name, stats]) => {
-        lines.push(`| ${name} | ${stats.p50}ms/${stats.mongoOnly.p50}ms | ${stats.p90}ms/${stats.mongoOnly.p90}ms | ${stats.p95}ms/${stats.mongoOnly.p95}ms | ${stats.p99}ms/${stats.mongoOnly.p99}ms |`);
+        lines.push(`| ${name} | ${stats.p50}ms / ${stats.mongoOnly.p50}ms | ${stats.p90}ms / ${stats.mongoOnly.p90}ms | ${stats.p95}ms / ${stats.mongoOnly.p95}ms | ${stats.p99}ms / ${stats.mongoOnly.p99}ms |`);
     });
 
     lines.push('');
-    lines.push('*Note: These are pure MongoDB query times without any HTTP/Express overhead.*');
 
     return lines.join('\n');
 }
@@ -500,11 +665,12 @@ async function runMongoDBBenchmark() {
         const testData = await getExistingTestData();
         console.log('📋 TEST DATA:');
         console.log(`   User ID: ${testData.userId}`);
-        console.log(`   Date: ${testData.date}`);
-        console.log(`   Hour: ${testData.hour}`);
         console.log(`   Template ID: ${testData.templateId}`);
         console.log(`   Tracking ID: ${testData.trackingId}`);
-        console.log(`   Last User ID: ${testData.lastUserId}`);
+        console.log(`   Planned Date Hour: ${testData.plannedDateHour}`);
+        console.log(`   Schedule Range: ${testData.startTime.toISOString()} to ${testData.endTime.toISOString()}`);
+        console.log(`   Last User ID for v1: ${testData.lastUserIdForV1} (first page)`);
+        console.log(`   Last User ID for v2: ${testData.lastUserIdForV2} (pagination)`);
         console.log('');
 
         // Run benchmarks
@@ -530,8 +696,8 @@ async function runMongoDBBenchmark() {
 
         console.log('\n📋 MONGODB PERFORMANCE RESULTS:');
         console.log('===============================');
-        console.log(`👥 Users: ${collectionStats.users.toLocaleString()}`);
         console.log(`🗄️ Database: ${collectionStats.documents.toLocaleString()} documents`);
+        console.log(`🖥️ Server Tier: ${collectionStats.serverTier}`);
         console.log('');
 
         Object.entries(results).forEach(([name, stats]) => {
